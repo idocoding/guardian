@@ -13,7 +13,7 @@ import { validateArchitectureSnapshot, validateUxSnapshot } from "../schema/inde
 import type { SpecGuardConfig } from "../config.js";
 import { getOutputLayout } from "../output-layout.js";
 import { logResolvedProjectPaths, resolveProjectPaths } from "../project-discovery.js";
-import type { ArchitectureSnapshot, UxSnapshot } from "./types.js";
+import type { ArchitectureSnapshot, BackendAnalysis, FrontendAnalysis, UxSnapshot } from "./types.js";
 import { analyzeDepth } from "./analyzers/depth.js";
 import type { StructuralIntelligenceReport } from "./types.js";
 
@@ -53,8 +53,22 @@ export async function buildSnapshots(
   const reportedWorkspaceRoot = formatOutputPath(workspaceRoot);
   const config = resolvedProject.config;
 
-  const backend = await analyzeBackend(resolvedBackendRoot, config, workspaceRoot);
-  const frontend = await analyzeFrontend(resolvedFrontendRoot, config);
+  // Analyze all roots — run both analyzers on each root, then merge
+  const allRoots = resolvedProject.roots;
+  const backendResults: BackendAnalysis[] = [];
+  const frontendResults: FrontendAnalysis[] = [];
+
+  for (const root of allRoots) {
+    const [be, fe] = await Promise.all([
+      analyzeBackend(root, config, workspaceRoot),
+      analyzeFrontend(root, config)
+    ]);
+    backendResults.push(be);
+    frontendResults.push(fe);
+  }
+
+  const backend = mergeBackendAnalyses(backendResults, allRoots, workspaceRoot);
+  const frontend = mergeFrontendAnalyses(frontendResults, allRoots, workspaceRoot);
   const projectRoot = workspaceRoot;
   const runtime = await analyzeRuntime(workspaceRoot, config);
 
@@ -112,6 +126,7 @@ export async function buildSnapshots(
       workspace_root: reportedWorkspaceRoot,
       backend_root: reportedBackendRoot,
       frontend_root: reportedFrontendRoot,
+      roots: resolvedProject.roots.map(formatOutputPath),
       resolution_source: resolvedProject.resolutionSource,
       entrypoints: backend.entrypoints
     },
@@ -370,6 +385,102 @@ async function buildFunctionTestCoverage(params: {
       test_files: tests
     };
   });
+}
+
+function mergeBackendAnalyses(results: BackendAnalysis[], roots: string[], workspaceRoot: string): BackendAnalysis {
+  if (results.length === 1) return results[0];
+
+  // Prefix module IDs with root-relative path so they're globally unique
+  for (let i = 0; i < results.length; i++) {
+    const rootLabel = path.relative(workspaceRoot, roots[i]).replace(/\\/g, "/");
+    const idMap = new Map<string, string>();
+    for (const mod of results[i].modules) {
+      const newId = `${rootLabel}/${mod.id}`;
+      idMap.set(mod.id, newId);
+      mod.id = newId;
+      mod.path = `${rootLabel}/${mod.path}`;
+    }
+    // Remap references in graph edges, endpoints, etc.
+    for (const edge of results[i].moduleGraph) {
+      edge.from = idMap.get(edge.from) ?? edge.from;
+      edge.to = idMap.get(edge.to) ?? edge.to;
+    }
+    for (const ep of results[i].endpoints) {
+      if (ep.module && idMap.has(ep.module)) {
+        ep.module = idMap.get(ep.module)!;
+      }
+    }
+    for (const cycle of results[i].circularDependencies) {
+      for (let j = 0; j < cycle.length; j++) {
+        cycle[j] = idMap.get(cycle[j]) ?? cycle[j];
+      }
+    }
+    results[i].orphanModules = results[i].orphanModules.map(m => idMap.get(m) ?? m);
+    const newUsage: Record<string, number> = {};
+    for (const [key, value] of Object.entries(results[i].moduleUsage)) {
+      newUsage[idMap.get(key) ?? key] = value;
+    }
+    results[i].moduleUsage = newUsage;
+  }
+
+  const moduleUsage: Record<string, number> = {};
+  for (const r of results) {
+    for (const [key, value] of Object.entries(r.moduleUsage)) {
+      moduleUsage[key] = (moduleUsage[key] ?? 0) + value;
+    }
+  }
+
+  // Merge testCoverage: combine arrays across all roots
+  const mergedCoverage = { ...results[0].testCoverage };
+  mergedCoverage.untested_source_files = [...mergedCoverage.untested_source_files];
+  mergedCoverage.test_files_missing_source = [...mergedCoverage.test_files_missing_source];
+  mergedCoverage.coverage_map = [...mergedCoverage.coverage_map];
+  for (let i = 1; i < results.length; i++) {
+    const tc = results[i].testCoverage;
+    mergedCoverage.untested_source_files.push(...tc.untested_source_files);
+    mergedCoverage.test_files_missing_source.push(...tc.test_files_missing_source);
+    mergedCoverage.coverage_map.push(...tc.coverage_map);
+  }
+
+  return {
+    modules: results.flatMap(r => r.modules),
+    moduleGraph: results.flatMap(r => r.moduleGraph),
+    fileGraph: results.flatMap(r => r.fileGraph),
+    endpoints: results.flatMap(r => r.endpoints),
+    dataModels: results.flatMap(r => r.dataModels),
+    enums: results.flatMap(r => r.enums),
+    constants: results.flatMap(r => r.constants),
+    endpointModelUsage: results.flatMap(r => r.endpointModelUsage),
+    tasks: results.flatMap(r => r.tasks),
+    circularDependencies: results.flatMap(r => r.circularDependencies),
+    orphanModules: results.flatMap(r => r.orphanModules),
+    orphanFiles: results.flatMap(r => r.orphanFiles),
+    moduleUsage,
+    unusedExports: results.flatMap(r => r.unusedExports),
+    unusedEndpoints: results.flatMap(r => r.unusedEndpoints),
+    entrypoints: results.flatMap(r => r.entrypoints),
+    duplicateFunctions: results.flatMap(r => r.duplicateFunctions),
+    similarFunctions: results.flatMap(r => r.similarFunctions),
+    testCoverage: mergedCoverage,
+    tests: results.flatMap(r => r.tests)
+  };
+}
+
+function mergeFrontendAnalyses(results: FrontendAnalysis[], _roots: string[], _workspaceRoot: string): FrontendAnalysis {
+  if (results.length === 1) return results[0];
+
+  return {
+    files: results.flatMap(r => r.files),
+    pages: results.flatMap(r => r.pages),
+    apiCalls: results.flatMap(r => r.apiCalls),
+    uxPages: results.flatMap(r => r.uxPages),
+    components: results.flatMap(r => r.components),
+    componentGraph: results.flatMap(r => r.componentGraph),
+    fileGraph: results.flatMap(r => r.fileGraph),
+    orphanFiles: results.flatMap(r => r.orphanFiles),
+    unusedExports: results.flatMap(r => r.unusedExports),
+    tests: results.flatMap(r => r.tests)
+  };
 }
 
 function findCommonRoot(paths: string[]): string {

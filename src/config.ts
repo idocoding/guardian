@@ -6,6 +6,8 @@ export type SpecGuardConfig = {
     root?: string;
     backendRoot?: string;
     frontendRoot?: string;
+    /** Additional roots to scan (merged with backendRoot/frontendRoot) */
+    roots?: string[];
     discovery?: {
       enabled?: boolean;
     };
@@ -78,6 +80,7 @@ const DEFAULT_CONFIG: Required<SpecGuardConfig> = {
     root: "",
     backendRoot: "",
     frontendRoot: "",
+    roots: [],
     discovery: {
       enabled: true
     },
@@ -221,6 +224,11 @@ function normalizeConfig(input: SpecGuardConfig, configDir?: string): SpecGuardC
     project.root = resolveMaybe(project.root) ?? "";
     project.backendRoot = resolveMaybe(project.backendRoot) ?? "";
     project.frontendRoot = resolveMaybe(project.frontendRoot) ?? "";
+    if (Array.isArray(project.roots) && configDir) {
+      project.roots = (project.roots as string[])
+        .filter((r): r is string => typeof r === "string" && r.trim().length > 0)
+        .map(r => path.resolve(configDir, r));
+    }
     normalized.project = project as SpecGuardConfig["project"];
   }
 
@@ -363,6 +371,7 @@ function mergeConfig(base: SpecGuardConfig, override: SpecGuardConfig): SpecGuar
       root: override.project?.root ?? base.project?.root ?? "",
       backendRoot: override.project?.backendRoot ?? base.project?.backendRoot ?? "",
       frontendRoot: override.project?.frontendRoot ?? base.project?.frontendRoot ?? "",
+      roots: mergeArrays(base.project?.roots, override.project?.roots),
       discovery: {
         enabled:
           override.project?.discovery?.enabled ??

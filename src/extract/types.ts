@@ -266,6 +266,7 @@ export type ArchitectureSnapshot = {
     workspace_root: string;
     backend_root: string;
     frontend_root: string;
+    roots?: string[];
     resolution_source: "auto" | "config" | "cli";
     entrypoints: string[];
   };

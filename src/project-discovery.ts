@@ -31,6 +31,8 @@ export type ResolvedProjectPaths = {
   workspaceRoot: string;
   backendRoot: string;
   frontendRoot: string;
+  /** All roots to scan (includes backendRoot + frontendRoot + any extra from config) */
+  roots: string[];
   resolutionSource: ResolutionSource;
   config: SpecGuardConfig;
 };
@@ -89,18 +91,27 @@ export async function resolveProjectPaths(
     explicitFrontend ??
     (await chooseFrontendRoot(workspaceRoot));
 
+  // Build unified roots list: backendRoot + frontendRoot + any extra from config
+  const configRoots = (config.project?.roots ?? []).map(r => path.resolve(r));
+  const allRoots = [...new Set([backendRoot, frontendRoot, ...configRoots].filter(Boolean))];
+
   return {
     workspaceRoot,
     backendRoot,
     frontendRoot,
+    roots: allRoots,
     resolutionSource,
     config
   };
 }
 
 export function logResolvedProjectPaths(resolved: ResolvedProjectPaths): void {
+  const extra = resolved.roots.filter(
+    r => r !== resolved.backendRoot && r !== resolved.frontendRoot
+  );
+  const extraMsg = extra.length > 0 ? ` +${extra.length} roots` : "";
   console.log(
-    `Guardian roots (${resolved.resolutionSource}): workspace=${resolved.workspaceRoot} backend=${resolved.backendRoot} frontend=${resolved.frontendRoot}`
+    `Guardian roots (${resolved.resolutionSource}): workspace=${resolved.workspaceRoot} backend=${resolved.backendRoot} frontend=${resolved.frontendRoot}${extraMsg}`
   );
 }
 
