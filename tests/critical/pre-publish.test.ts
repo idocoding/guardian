@@ -248,18 +248,23 @@ describe("Endpoint sanity", () => {
 
 // ========== DEEP INTELLIGENCE SECTION ==========
 
-describe("Deep Intelligence footer", () => {
-  it("includes Deep Intelligence section with file pointers", () => {
+describe("How to Use This Context footer", () => {
+  it("includes usage section with file pointers", () => {
     const output = renderContextBlock(makeArch([]), emptyUx);
-    expect(output).toContain("### Deep Intelligence");
+    expect(output).toContain("### How to Use This Context");
     expect(output).toContain("architecture.snapshot.yaml");
     expect(output).toContain("codebase-intelligence.json");
     expect(output).toContain("structural-intelligence.json");
   });
 
-  it("includes guardian search and context commands", () => {
+  it("includes directive to run guardian search before reading files", () => {
     const output = renderContextBlock(makeArch([]), emptyUx);
+    expect(output).toContain("Before reading source files");
     expect(output).toContain('guardian search --query');
+  });
+
+  it("includes guardian context and drift commands", () => {
+    const output = renderContextBlock(makeArch([]), emptyUx);
     expect(output).toContain('guardian context --focus');
     expect(output).toContain('guardian drift');
   });
@@ -277,7 +282,7 @@ describe("Deep Intelligence footer", () => {
       },
     });
     const output = renderContextBlock(arch, emptyUx);
-    expect(output).toContain("Circular dependencies detected: 1 cycles");
+    expect(output).toContain("1 circular dependency cycle(s) detected");
   });
 
   it("mentions file graph when present", () => {

@@ -176,28 +176,28 @@ export function renderContextBlock(
     }
   }
 
-  // Deep intelligence pointers — tell AI agents where to find more detail
-  lines.push("### Deep Intelligence");
+  // Deep intelligence — directive instructions for AI agents
+  lines.push("### How to Use This Context");
   lines.push("");
-  lines.push("The above is a summary. For deeper analysis, these files and commands are available:");
+  lines.push("> **Before reading source files**, run `guardian search --query \"<keyword>\"` to find relevant endpoints, models, components, and modules. This is faster than file exploration.");
   lines.push("");
-  lines.push("**Files** (read directly when you need detail):");
-  lines.push("- `.specs/machine/architecture.snapshot.yaml` — full module map with every file, export symbol, import edge");
-  lines.push("- `.specs/machine/codebase-intelligence.json` — API registry with handler code, service calls, request/response schemas");
-  lines.push("- `.specs/machine/structural-intelligence.json` — depth/complexity analysis per module");
+  lines.push("**Deeper analysis files** (read when you need specifics):");
+  lines.push("- `.specs/machine/architecture.snapshot.yaml` — every file, export symbol, and import edge per module");
+  lines.push("- `.specs/machine/codebase-intelligence.json` — API registry: handlers, service calls, request/response schemas");
+  lines.push("- `.specs/machine/structural-intelligence.json` — depth and complexity classification per module");
 
   if (architecture.dependencies.file_graph.length > 0) {
-    lines.push("- `.specs/machine/architecture.snapshot.yaml → dependencies.file_graph` — file-level dependency edges");
+    lines.push("- File-level dependency graph available in `architecture.snapshot.yaml → dependencies.file_graph`");
   }
   if (architecture.analysis?.circular_dependencies?.length > 0) {
-    lines.push(`- Circular dependencies detected: ${architecture.analysis.circular_dependencies.length} cycles (check snapshot)`);
+    lines.push(`- ⚠ ${architecture.analysis.circular_dependencies.length} circular dependency cycle(s) detected — check snapshot before refactoring`);
   }
 
   lines.push("");
-  lines.push("**Commands** (run in terminal for targeted lookup):");
-  lines.push("- `guardian search --query \"<feature>\"` — search endpoints, models, components, modules by keyword");
-  lines.push("- `guardian context --focus \"<feature>\"` — generate focused context for a specific area");
-  lines.push("- `guardian drift` — check architectural drift metrics");
+  lines.push("**Commands:**");
+  lines.push("- `guardian search --query \"auth\"` — find everything related to a feature");
+  lines.push("- `guardian context --focus \"auth\"` — generate AI context focused on one area");
+  lines.push("- `guardian drift` — check if architecture has shifted since last baseline");
   lines.push("");
 
   lines.push("<!-- /guardian:context -->");
