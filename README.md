@@ -1,223 +1,195 @@
 # Guardian
 
+[![npm version](https://img.shields.io/npm/v/@toolbaux/guardian.svg)](https://www.npmjs.com/package/@toolbaux/guardian)
+[![license](https://img.shields.io/npm/l/@toolbaux/guardian.svg)](./LICENSE)
+
 Architectural intelligence for codebases. One command turns your repo into compact, machine-readable context that AI coding tools can reason about without hallucinating.
 
-## Quick Start
-
 ```bash
-# Initialize a project (creates .specs/, config, pre-commit hook, CLAUDE.md context)
+npm install -g @toolbaux/guardian
 guardian init
+```
 
-# Or run extraction manually
-guardian extract
-guardian generate --ai-context
+## The Problem
+
+AI coding tools hallucinate when they don't understand your architecture. They guess at imports, invent schemas that don't exist, and edit high-coupling files without understanding the blast radius.
+
+**Without Guardian** — Cursor generates this:
+
+```python
+from app.schemas import UpdateCaseRequest  # ← doesn't exist
+from app.models import User               # ← it's actually UserProfile
+from shared.utils import validate          # ← wrong module, it's in shared.policy
+```
+
+**With Guardian** — the AI reads your architecture context and generates:
+
+```python
+from shared.policy.persona import ChildProfile        # ✓ exact import path
+from service_conversation.engine import ConversationEngine  # ✓ correct module
+from shared.content.retriever import ContentRetriever  # ✓ verified by AST
+```
+
+Guardian extracts exact boundaries, coupling hotspots, model-to-endpoint relationships, page routes, and data flows from your source code using Tree-Sitter AST parsing. No LLM involved in extraction — deterministic, reproducible, fast.
+
+## How It Works
+
+```
+Developer writes code
+    ↓ (save)
+VSCode extension (5s debounce)
+    ↓
+guardian extract → .specs/
+guardian generate --ai-context → .specs/
+guardian context → CLAUDE.md (between markers)
+Status bar: "✓ Guardian: stable · 35 ep · 8 pg"
+    ↓ (git commit)
+Pre-commit hook: extract + context → auto-staged
+    ↓
+Claude Code / Cursor reads CLAUDE.md → fresh architecture context
 ```
 
 After `guardian init`, your project gets:
 - `.specs/` directory with architecture snapshots
-- `CLAUDE.md` with auto-injected architecture context (between `<!-- guardian:auto-context -->` markers)
-- Pre-commit hook that keeps context fresh on every commit
+- `CLAUDE.md` with auto-injected context (refreshed on every save and commit)
+- Pre-commit hook that keeps context fresh automatically
 - `guardian.config.json` with auto-detected backend/frontend roots
 
-## What Guardian Solves
+## Claude Code / Cursor Integration
 
-**Without Guardian:** AI invents fake schemas, imports wrong components, edits high-coupling files blindly, guesses at endpoint paths.
+Guardian auto-injects architecture context into `CLAUDE.md` so your AI tool reads it at session start:
 
-**With Guardian:** AI gets a deterministic map of your repo — exact boundaries, coupling hotspots, model-to-endpoint relationships, page routes, and data flows — in ~3,000 tokens.
+```markdown
+# my-project
 
-## Installation
+<!-- guardian:auto-context -->
+## Codebase Map
+**Backend:** 16 schemas · 35 endpoints · 9 modules
+**Frontend:** 10 components · 8 pages
+
+### High-Coupling Files
+- shared/policy/__init__.py (score 1.00)
+- service-conversation/engine.py (score 0.40)
+
+### Key Model → Endpoint Map
+- ChildProfile (1 endpoints) → POST /sessions/start
+- StartSessionResponse (1 endpoints) → POST /sessions/start
+<!-- /guardian:auto-context -->
+```
+
+The block between markers is replaced on every save (VSCode extension) and every commit (pre-commit hook). Your manual content outside the markers is never touched.
+
+## Key Commands
 
 ```bash
-# From source
-git clone <repo>
-cd guardian
-npm install && npm run build
-npm link   # makes `guardian` available globally
+# One-time setup — creates config, .specs/, pre-commit hook, CLAUDE.md
+guardian init
 
-# Or install from npm
+# Extract architecture (run after major changes, or let the hook do it)
+guardian extract
+
+# Search your codebase by concept
+guardian search --query "session"
+
+# Compute architectural drift
+guardian drift
+
+# Generate HTML docs (open in browser, no server needed)
+guardian doc-html
+```
+
+## Framework Support
+
+**Frontend:** Expo Router, Next.js, React Router — auto-detected from `package.json`
+**Backend:** FastAPI, Django, Express, Spring Boot, Gin, ASP.NET Core
+
+All extraction uses Tree-Sitter AST parsing — deterministic, no LLM involved.
+
+## What Guardian Generates
+
+**Workflow sequence diagrams** — Mermaid diagrams for your most complex endpoints, showing the full call chain from client through handler to services and data stores.
+
+**System architecture diagram** — Full system view: frontend → backend services → data stores → external APIs, with actual endpoint paths per service.
+
+**Model role badges** — Each data model gets an inferred role: API Request, API Response, Configuration, Safety Policy, Entity Profile, Content Entity.
+
+**Subsystem diagrams with real names** — Backend modules show `ConversationEngine`, `ContentRetriever`, `SessionStateMachine` instead of generic file counts.
+
+---
+
+## Full Reference
+
+<details>
+<summary><strong>Installation</strong></summary>
+
+```bash
+# Install from npm
 npm install -g @toolbaux/guardian
 
-# Initialize a project
-cd /path/to/your/project
-guardian init
+# Or from source
+git clone https://github.com/idocoding/guardian
+cd guardian
+npm install && npm run build && npm link
 ```
 
-### VSCode Extension
+</details>
 
-The extension adds a status bar indicator, background auto-extract on save, and command palette integration.
-
-**Install via symlink (development):**
-```bash
-ln -sf /path/to/guardian/vscode-extension ~/.vscode/extensions/guardian-vscode
-# Reload VSCode: Cmd+Shift+P → "Reload Window"
-```
-
-**Install via .vsix (packaged):**
-```bash
-cd guardian/vscode-extension
-npx vsce package --allow-missing-repository
-# In VSCode: Cmd+Shift+P → "Extensions: Install from VSIX" → select the .vsix file
-```
-
-**What the extension provides:**
-- Status bar: `✓ Guardian: stable · 35 ep · 8 pg` — click to run drift check
-- Background extract on file save (5s debounce, code files only)
-- Auto-injects fresh context into CLAUDE.md on each save
-- Command palette: 8 commands (see below)
-
-**Extension settings:**
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `guardian.autoExtract` | `true` | Auto-run extract + context on file save |
-| `guardian.runOnSave` | `false` | Also run drift check on save (heavier) |
-| `guardian.backendRoot` | `"backend"` | Backend root relative to workspace |
-| `guardian.frontendRoot` | `"frontend"` | Frontend root relative to workspace |
-| `guardian.configPath` | `""` | Path to guardian.config.json |
-| `guardian.debounceMs` | `750` | Debounce for drift-on-save |
-
-## All Commands (18)
+<details>
+<summary><strong>All Commands (18)</strong></summary>
 
 ### Project Setup
 
 ```bash
-# Initialize project: config, .specs dir, pre-commit hook, CLAUDE.md
-guardian init
-
-# Full extraction: architecture + UX snapshots + codebase intelligence + docs
-guardian extract
-
-# AI context file only (compact ~3K token summary)
-guardian generate --ai-context
-
-# Build codebase-intelligence.json from existing snapshots
-guardian intel
+guardian init                          # config, .specs dir, pre-commit hook, CLAUDE.md
+guardian extract                       # full architecture + UX snapshots + docs
+guardian generate --ai-context         # compact ~3K token AI context only
+guardian intel                         # build codebase-intelligence.json
 ```
 
 ### Search & Context
 
 ```bash
-# Search all artifacts by keyword (models, endpoints, components, modules, tasks)
-guardian search --query "session"
+guardian search --query "session"                  # search models, endpoints, components
 guardian search --query "auth" --types models,endpoints
-
-# Render focused AI context block (stdout or append to file)
-guardian context --focus "auth"
-guardian context --output CLAUDE.md          # injects between auto-context markers
-guardian context --focus "session" --output CLAUDE.md
-
-# Executive summary from existing snapshots
-guardian summary
+guardian context --focus "auth"                     # focused AI context block
+guardian context --output CLAUDE.md                 # inject between auto-context markers
+guardian summary                                   # executive summary
 ```
 
 ### Architectural Metrics
 
 ```bash
-# Compute drift metrics (D_t, K_t, delta, entropy, cycles)
-guardian drift
+guardian drift                         # compute D_t, K_t, delta, entropy, cycles
 guardian drift --baseline              # save baseline for future comparison
-
-# Verify drift stays within threshold (for CI gates)
-guardian verify-drift --baseline specs-out/machine/drift.baseline.json
-
-# Generate constraints JSON (duplicates, cycles, similar endpoints)
-guardian constraints
-
-# Structural complexity analysis for a feature area
-guardian analyze-depth --query "session"
-guardian analyze-depth --query "payment" --ci  # exit 1 on HIGH complexity
-
-# Diff between two snapshots
+guardian verify-drift --baseline drift.baseline.json  # CI gate
+guardian constraints                   # duplicates, cycles, similar endpoints
+guardian analyze-depth --query "session"            # structural complexity
+guardian analyze-depth --query "payment" --ci       # exit 1 on HIGH complexity
 guardian diff --baseline old.yaml --current new.yaml
 ```
 
 ### Documentation
 
 ```bash
-# LLM-powered product document (uses Ollama or Anthropic)
-guardian doc-generate
-guardian doc-generate --update-baseline    # freeze for discrepancy tracking
-
-# HTML Javadoc-style viewer (no server needed, open in browser)
-guardian doc-html
-
-# Discrepancy report: code vs baseline (JSON + Markdown)
-guardian discrepancy
+guardian doc-generate                  # LLM-powered product document
+guardian doc-generate --update-baseline
+guardian doc-html                      # HTML viewer (open in browser)
+guardian discrepancy                   # code vs baseline drift report
 ```
 
 ### Simulation & LLM Guardrails
 
 ```bash
-# Simulate drift impact of a patch before merging
 guardian simulate --patch changes.patch
-
-# LLM-guided code generation with drift guardrails
 guardian guard --task "add payment endpoint"
-guardian guard --task "refactor auth" --print-context  # print without calling LLM
-
-# Generate filtered context packet for implementing a single feature
+guardian guard --task "refactor auth" --print-context
 guardian feature-context --spec feature-specs/billing.yaml
 ```
 
-### VSCode Commands (Command Palette)
+</details>
 
-| Command | Description |
-|---------|-------------|
-| `Guardian: Initialize Project` | Run `guardian init` on workspace |
-| `Guardian: Generate AI Context` | Generate architecture-context.md |
-| `Guardian: Drift Check` | Compute drift metrics |
-| `Guardian: Generate Constraints` | Find duplicates, cycles, similar endpoints |
-| `Guardian: Copy Constraints Prompt` | Copy LLM guardrail prompt to clipboard |
-| `Guardian: Simulate Drift` | Simulate drift without a patch |
-| `Guardian: Guard Patch (Simulate)` | Pick a .patch file and simulate its impact |
-| `Guardian: Guarded Run` | Constraints + simulation in one step |
-
-## Output Structure
-
-```
-.specs/                              (or specs-out/)
-├── machine/
-│   ├── architecture-context.md      ← AI context (~3K tokens, injected into CLAUDE.md)
-│   ├── architecture.snapshot.yaml   ← full architecture snapshot
-│   ├── ux.snapshot.yaml             ← frontend components + pages
-│   ├── codebase-intelligence.json   ← unified registry for all downstream commands
-│   ├── structural-intelligence.json ← per-module complexity analysis
-│   ├── drift.heatmap.json           ← coupling scores per module
-│   ├── drift.report.json            ← drift metrics
-│   ├── constraints.json             ← duplicates, cycles, similar endpoints
-│   ├── discrepancies.json           ← code vs baseline diff
-│   └── docs/                        ← generated markdown docs
-│       ├── summary.md               ← product overview with quality signals
-│       ├── hld.md                   ← system diagrams, coupling heatmap, subsystems
-│       ├── integration.md           ← all API endpoints grouped by domain
-│       ├── data.md                  ← data models and schemas
-│       ├── ux.md                    ← pages, components, interaction maps
-│       ├── diff.md                  ← changelog between snapshots
-│       ├── runtime.md               ← Docker services, background tasks
-│       ├── infra.md                 ← manifests, scripts, Makefiles
-│       ├── tests.md                 ← behavioral test specs
-│       ├── stakeholder.md           ← one-page executive view
-│       └── index.md                 ← table of contents
-├── human/
-│   ├── product-document.md          ← LLM-powered comprehensive product doc
-│   ├── discrepancies.md             ← human-readable drift report
-│   ├── start-here.md                ← onboarding guide
-│   ├── system-overview.md           ← boundaries, risk zones
-│   ├── backend-overview.md          ← modules by layer
-│   ├── frontend-overview.md         ← page/component inventory
-│   ├── data-and-flows.md            ← models and cross-stack contracts
-│   ├── change-guide.md              ← what changed, what's risky
-│   └── docs/                        ← HTML viewer (open index.html in browser)
-│       ├── index.html               ← overview with product context from README
-│       ├── architecture.html        ← system diagram, workflow sequences, coupling
-│       ├── api-surface.html         ← all endpoints by domain
-│       ├── data-models.html         ← models with role badges
-│       ├── quality.html             ← patterns, duplicates, orphans
-│       ├── frontend.html            ← pages with component trees
-│       ├── tasks.html               ← background tasks
-│       └── discrepancies.html       ← code vs spec drift
-```
-
-## Configuration
+<details>
+<summary><strong>Configuration</strong></summary>
 
 `guardian.config.json` at project root (auto-created by `guardian init`):
 
@@ -240,83 +212,39 @@ guardian feature-context --spec feature-specs/billing.yaml
       "core": ["shared"],
       "top": ["service-conversation"],
       "isolated": ["service-auth", "service-content"]
-    },
-    "domains": {
-      "session": ["service-conversation", "shared"],
-      "auth": ["service-auth"]
     }
   },
   "llm": {
     "command": "ollama",
     "args": ["run", "llama3"]
-  },
-  "docs": {
-    "mode": "full"
-  },
-  "ignore": {
-    "directories": ["venv", "node_modules", "__pycache__"],
-    "paths": ["backend/alembic/versions"]
   }
 }
 ```
 
-## Claude Code Integration
+</details>
 
-Guardian auto-injects architecture context into `CLAUDE.md` so Claude Code reads it at session start:
+<details>
+<summary><strong>Output Structure</strong></summary>
 
-```markdown
-# my-project
-
-## Guardian Architecture Context
-
-<!-- guardian:auto-context -->
-## Codebase Map
-**Backend:** 16 schemas · 35 endpoints · 9 modules
-**Frontend:** 10 components · 8 pages
-
-### High-Coupling Files
-- shared/policy/__init__.py (score 1.00)
-- service-conversation/engine.py (score 0.40)
-...
-<!-- /guardian:auto-context -->
+```
+.specs/
+├── machine/
+│   ├── architecture-context.md      ← AI context (~3K tokens)
+│   ├── architecture.snapshot.yaml   ← full architecture snapshot
+│   ├── ux.snapshot.yaml             ← frontend components + pages
+│   ├── codebase-intelligence.json   ← unified registry
+│   ├── drift.report.json            ← drift metrics
+│   ├── constraints.json             ← duplicates, cycles
+│   └── docs/                        ← generated markdown docs
+├── human/
+│   ├── product-document.md          ← LLM-powered product doc
+│   └── docs/                        ← HTML viewer (open index.html)
 ```
 
-The block between `<!-- guardian:auto-context -->` markers is replaced on every save (via VSCode extension) and every commit (via pre-commit hook). Your manual content in CLAUDE.md outside the markers is never touched.
+</details>
 
-## Key Architectural Outputs
-
-### Workflow Sequence Diagrams
-Auto-generated Mermaid sequence diagrams for your most complex endpoints, showing the full call chain from client through handler to services and data stores.
-
-### System Architecture Diagram
-Full system view: frontend → backend services → data stores → external APIs, with actual endpoint paths shown per service.
-
-### Service Communication Map
-Cross-service dependency flowchart showing which modules import from which, proxy patterns, and external API calls.
-
-### Model Role Badges
-Each data model gets an inferred role badge: API Request, API Response, Configuration, Safety Policy, Entity Profile, Content Entity, etc.
-
-### Subsystem Diagrams with Entity Names
-Backend module diagrams show actual class names (e.g., `ConversationEngine`, `ContentRetriever`, `SessionStateMachine`) instead of generic file counts.
-
-## Framework Support
-
-### Frontend Frameworks
-- **Expo Router** — auto-detected from `package.json`. Every `.tsx` in `app/` is a page (except `_layout`, `_error`). Route derived from filename.
-- **Next.js** — `page.tsx` convention in `app/` directory.
-- **React Router** — route definitions parsed from JSX `<Route>` elements and `createBrowserRouter()`.
-
-### Backend Frameworks
-- **Python**: FastAPI, Django, Pydantic, SQLAlchemy
-- **TypeScript/JavaScript**: Express, React, Next.js
-- **Java**: Spring Boot (`@RestController`, JPA)
-- **Go**: Gin routing, struct models
-- **C#**: ASP.NET Core HTTP endpoints, POCO schemas
-
-All extraction uses Tree-Sitter AST parsing — deterministic, no LLM involved.
-
-## Key Metrics
+<details>
+<summary><strong>Key Metrics</strong></summary>
 
 | Metric | Meaning |
 |--------|---------|
@@ -324,26 +252,12 @@ All extraction uses Tree-Sitter AST parsing — deterministic, no LLM involved.
 | **K_t** | Architectural complexity |
 | **Delta** | Overall drift score |
 | **Coupling score** | Per-module dependency pressure (0-1) |
-| **Shape fingerprint** | Change = structural refactor. Same shape + different fingerprint = additive change |
+| **Shape fingerprint** | Change = structural refactor |
 
-## Automation Flow
+</details>
 
-```
-Developer writes code
-    ↓ (save)
-VSCode extension (5s debounce)
-    ↓
-guardian extract → .specs/
-guardian generate --ai-context → .specs/
-guardian context → CLAUDE.md (between markers)
-Status bar: "✓ Guardian: stable · 35 ep · 8 pg"
-    ↓ (git commit)
-Pre-commit hook: extract + context → auto-staged
-    ↓
-Claude Code reads CLAUDE.md → fresh architecture context
-```
-
-## GitHub Action
+<details>
+<summary><strong>GitHub Action</strong></summary>
 
 ```yaml
 - name: Install Guardian
@@ -358,13 +272,21 @@ Claude Code reads CLAUDE.md → fresh architecture context
 
 See [`.github/workflows/guardian.yml`](./.github/workflows/guardian.yml).
 
-## Development
+</details>
+
+<details>
+<summary><strong>Development</strong></summary>
 
 ```bash
 npm install
 npm run dev -- extract .          # run from source
 npm run build                     # compile to dist/
-npm run start -- extract .        # run compiled
 npm run typecheck                 # type check only
 npm test                          # run tests
 ```
+
+</details>
+
+---
+
+Built by [ToolBaux](https://github.com/idocoding). If Guardian helps you ship with confidence, [star the repo](https://github.com/idocoding/guardian).
