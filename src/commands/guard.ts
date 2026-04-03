@@ -6,6 +6,7 @@ import { runSimulate } from "./simulate.js";
 import { buildSnapshots } from "../extract/index.js";
 import { renderContextBlock } from "../extract/context-block.js";
 import { logResolvedProjectPaths, resolveProjectPaths } from "../project-discovery.js";
+import { DEFAULT_SPECS_DIR } from "../config.js";
 
 export type GuardOptions = {
   projectRoot?: string;
@@ -49,7 +50,7 @@ export async function runGuard(options: GuardOptions): Promise<void> {
       projectRoot: resolved.workspaceRoot,
       backendRoot: resolved.backendRoot,
       frontendRoot: resolved.frontendRoot,
-      output: "specs-out",
+      output: DEFAULT_SPECS_DIR,
       includeFileGraph: true,
       configPath: options.configPath
     });

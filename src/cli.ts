@@ -19,6 +19,7 @@ import { runDocGenerate } from "./commands/doc-generate.js";
 import { runDiscrepancy } from "./commands/discrepancy.js";
 import { runDocHtml } from "./commands/doc-html.js";
 import { runInit } from "./commands/init.js";
+import { DEFAULT_SPECS_DIR } from "./config.js";
 
 const program = new Command();
 
@@ -34,7 +35,7 @@ program
   .option("--backend-root <path>", "Path to backend root")
   .option("--frontend-root <path>", "Path to frontend root")
   .option("--config <path>", "Path to specguard.config.json")
-  .option("--output <path>", "Output directory", "specs-out")
+  .option("--output <path>", "Output directory", DEFAULT_SPECS_DIR)
   .option("--focus <text>", "Focus the generated AI context on a feature area")
   .option("--max-lines <count>", "Maximum lines for the generated context")
   .option("--ai-context", "Generate architecture-context.md for AI tools", false)
@@ -57,7 +58,7 @@ program
   .argument("[projectRoot]", "Repo or project root", process.cwd())
   .option("--backend-root <path>", "Path to backend root")
   .option("--frontend-root <path>", "Path to frontend root")
-  .option("--output <path>", "Output directory", "specs-out")
+  .option("--output <path>", "Output directory", DEFAULT_SPECS_DIR)
   .option("--include-file-graph", "Include file-level dependency graph", false)
   .option("--config <path>", "Path to specguard.config.json")
   .option("--docs-mode <mode>", "Docs mode (lean|full)")
@@ -66,7 +67,7 @@ program
       projectRoot,
       backendRoot: options.backendRoot,
       frontendRoot: options.frontendRoot,
-      output: options.output ?? "specs-out",
+      output: options.output ?? DEFAULT_SPECS_DIR,
       includeFileGraph: options.includeFileGraph ?? false,
       configPath: options.config,
       docsMode: options.docsMode
@@ -206,11 +207,11 @@ program
 program
   .command("summary")
   .description("Generate a plain-language project summary from existing snapshots")
-  .option("--input <path>", "Snapshot output directory", "specs-out")
+  .option("--input <path>", "Snapshot output directory", DEFAULT_SPECS_DIR)
   .option("--output <path>", "Summary output path")
   .action(async (options) => {
     await runSummary({
-      input: options.input ?? "specs-out",
+      input: options.input ?? DEFAULT_SPECS_DIR,
       output: options.output
     });
   });
@@ -218,7 +219,7 @@ program
 program
   .command("search")
   .description("Search existing snapshots for models, endpoints, components, modules, and tasks")
-  .option("--input <path>", "Snapshot output directory", "specs-out")
+  .option("--input <path>", "Snapshot output directory", DEFAULT_SPECS_DIR)
   .requiredOption("--query <text>", "Search query")
   .option("--output <path>", "Write search results to a file")
   .option(
@@ -227,7 +228,7 @@ program
   )
   .action(async (options) => {
     await runSearch({
-      input: options.input ?? "specs-out",
+      input: options.input ?? DEFAULT_SPECS_DIR,
       query: options.query,
       output: options.output,
       types: options.types ? [options.types] : undefined
@@ -237,13 +238,13 @@ program
 program
   .command("context")
   .description("Render an AI-ready context block from existing snapshots")
-  .option("--input <path>", "Snapshot output directory", "specs-out")
+  .option("--input <path>", "Snapshot output directory", DEFAULT_SPECS_DIR)
   .option("--output <path>", "Append the context block to a file")
   .option("--focus <text>", "Focus the context on a feature area")
   .option("--max-lines <count>", "Maximum number of lines to include")
   .action(async (options) => {
     await runContext({
-      input: options.input ?? "specs-out",
+      input: options.input ?? DEFAULT_SPECS_DIR,
       output: options.output,
       focus: options.focus,
       maxLines: options.maxLines
@@ -277,7 +278,7 @@ program
 program
   .command("intel")
   .description("Build codebase-intelligence.json from existing snapshots")
-  .option("--specs <dir>", "Snapshot output directory", "specs-out")
+  .option("--specs <dir>", "Snapshot output directory", DEFAULT_SPECS_DIR)
   .option("--output <path>", "Output path for codebase-intelligence.json")
   .action(async (options) => {
     await runIntel({
@@ -290,7 +291,7 @@ program
   .command("feature-context")
   .description("Generate a filtered context packet for implementing a single feature")
   .requiredOption("--spec <file>", "Path to feature spec YAML")
-  .option("--specs <dir>", "Snapshot output directory", "specs-out")
+  .option("--specs <dir>", "Snapshot output directory", DEFAULT_SPECS_DIR)
   .option("--output <path>", "Output path for feature context JSON")
   .action(async (options) => {
     await runFeatureContext({
@@ -303,7 +304,7 @@ program
 program
   .command("doc-generate")
   .description("Generate a human-readable product document from codebase intelligence")
-  .option("--specs <dir>", "Snapshot output directory", "specs-out")
+  .option("--specs <dir>", "Snapshot output directory", DEFAULT_SPECS_DIR)
   .option("--feature-specs <dir>", "Directory of feature spec YAML files")
   .option("--output <path>", "Output path for product-document.md")
   .option("--update-baseline", "Freeze current state as new baseline for discrepancy tracking", false)
@@ -319,7 +320,7 @@ program
 program
   .command("discrepancy")
   .description("Diff current codebase intelligence against a committed baseline")
-  .option("--specs <dir>", "Snapshot output directory", "specs-out")
+  .option("--specs <dir>", "Snapshot output directory", DEFAULT_SPECS_DIR)
   .option("--feature-specs <dir>", "Directory of feature spec YAML files")
   .option("--output <path>", "Output path (used when --format is json or md)")
   .option("--format <fmt>", "Output format: json, md, or both (default: both)", "both")
@@ -335,11 +336,11 @@ program
 program
   .command("doc-html")
   .description("Generate a self-contained Javadoc-style HTML viewer from codebase intelligence")
-  .option("--specs <dir>", "Snapshot output directory", "specs-out")
+  .option("--specs <dir>", "Snapshot output directory", DEFAULT_SPECS_DIR)
   .option("--output <path>", "Output path for index.html")
   .action(async (options) => {
     await runDocHtml({
-      specs: options.specs ?? "specs-out",
+      specs: options.specs ?? DEFAULT_SPECS_DIR,
       output: options.output,
     });
   });
@@ -350,7 +351,7 @@ program
   .argument("[projectRoot]", "Repo or project root", process.cwd())
   .option("--backend-root <path>", "Path to backend root")
   .option("--frontend-root <path>", "Path to frontend root")
-  .option("--output <path>", "Output directory", ".specs")
+  .option("--output <path>", "Output directory", DEFAULT_SPECS_DIR)
   .option("--skip-hook", "Skip pre-commit hook installation", false)
   .action(async (projectRoot, options) => {
     await runInit({

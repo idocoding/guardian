@@ -1,5 +1,6 @@
 import path from "node:path";
 import fs from "node:fs/promises";
+import { DEFAULT_SPECS_DIR } from "./config.js";
 
 export type OutputLayout = {
   rootDir: string;
@@ -22,7 +23,7 @@ export function getOutputLayout(outputRoot: string, internalDir = "internal"): O
 }
 
 export async function resolveMachineInputDir(input: string): Promise<string> {
-  const resolved = path.resolve(input || "specs-out");
+  const resolved = path.resolve(input || DEFAULT_SPECS_DIR);
   const directSnapshot = await hasMachineSnapshots(resolved);
   if (directSnapshot) {
     return resolved;

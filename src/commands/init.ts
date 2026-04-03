@@ -13,6 +13,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { DEFAULT_SPECS_DIR } from "../config.js";
 
 export type InitOptions = {
   projectRoot?: string;
@@ -59,7 +60,7 @@ exit 0
 
 export async function runInit(options: InitOptions): Promise<void> {
   const root = path.resolve(options.projectRoot || process.cwd());
-  const specsDir = path.join(root, options.output || ".specs");
+  const specsDir = path.join(root, options.output || DEFAULT_SPECS_DIR);
 
   console.log(`Initializing Guardian in ${root}\n`);
 

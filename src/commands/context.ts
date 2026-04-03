@@ -8,6 +8,7 @@ import {
 import { renderContextBlock } from "../extract/context-block.js";
 import type { ArchitectureSnapshot, UxSnapshot } from "../extract/types.js";
 import { resolveMachineInputDir } from "../output-layout.js";
+import { DEFAULT_SPECS_DIR } from "../config.js";
 
 export type ContextOptions = {
   input: string;
@@ -17,7 +18,7 @@ export type ContextOptions = {
 };
 
 export async function runContext(options: ContextOptions): Promise<void> {
-  const inputDir = await resolveMachineInputDir(options.input || "specs-out");
+  const inputDir = await resolveMachineInputDir(options.input || DEFAULT_SPECS_DIR);
   const { architecture, ux } = await loadSnapshots(inputDir);
   const [diff, heatmap] = await Promise.all([
     loadArchitectureDiff(inputDir),

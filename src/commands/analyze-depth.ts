@@ -4,6 +4,7 @@ import yaml from "js-yaml";
 import { buildSnapshots } from "../extract/index.js";
 import { analyzeDepth } from "../extract/analyzers/depth.js";
 import type { StructuralIntelligenceReport } from "../extract/types.js";
+import { DEFAULT_SPECS_DIR } from "../config.js";
 
 export type AnalyzeDepthOptions = {
   projectRoot?: string;
@@ -21,7 +22,7 @@ export async function runAnalyzeDepth(options: AnalyzeDepthOptions): Promise<voi
     projectRoot: options.projectRoot,
     backendRoot: options.backendRoot,
     frontendRoot: options.frontendRoot,
-    output: options.output ?? "specs-out",
+    output: options.output ?? DEFAULT_SPECS_DIR,
     includeFileGraph: true,
     configPath: options.configPath
   });

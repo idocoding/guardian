@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { SpecGuardConfig } from "../config.js";
+import { DEFAULT_SPECS_DIR, type SpecGuardConfig } from "../config.js";
 import type {
   BackgroundTaskSummary,
   BackendEndpoint,
@@ -49,7 +49,7 @@ export async function loadBackendExtractionCache(params: {
   projectRoot: string;
   config: SpecGuardConfig;
 }): Promise<{ cachePath: string; cache: BackendExtractionCache }> {
-  const cachePath = path.join(params.projectRoot, "specs-out", ".cache", "file-hashes.json");
+  const cachePath = path.join(params.projectRoot, DEFAULT_SPECS_DIR, ".cache", "file-hashes.json");
   const configHash = hashObject(params.config);
 
   try {

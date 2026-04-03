@@ -9,7 +9,7 @@ import {
   buildArchitectureSummary,
   loadArchitectureSummary
 } from "../extract/compress.js";
-import type { SpecGuardConfig } from "../config.js";
+import { DEFAULT_SPECS_DIR, type SpecGuardConfig } from "../config.js";
 import { createIgnoreMatcher } from "../extract/ignore.js";
 import type { DriftReport } from "../extract/types.js";
 import { logResolvedProjectPaths, resolveProjectPaths } from "../project-discovery.js";
@@ -142,7 +142,7 @@ async function resolveBaselineSummaryPath(params: {
   if (params.override) {
     candidates.push(params.override);
   }
-  candidates.push(path.join(params.projectRoot, "specs-out", "machine", "architecture.summary.json"));
+  candidates.push(path.join(params.projectRoot, DEFAULT_SPECS_DIR, "machine", "architecture.summary.json"));
 
   for (const candidate of candidates) {
     const resolved = path.isAbsolute(candidate)

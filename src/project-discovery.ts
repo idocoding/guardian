@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { loadSpecGuardConfig, type SpecGuardConfig } from "./config.js";
+import { DEFAULT_SPECS_DIR, loadSpecGuardConfig, type SpecGuardConfig } from "./config.js";
 
 const IGNORE_DIRS = new Set([
   ".git",
@@ -12,7 +12,7 @@ const IGNORE_DIRS = new Set([
   "__pycache__",
   ".venv",
   "venv",
-  "specs-out",
+  DEFAULT_SPECS_DIR,
   ".pytest_cache",
   ".mypy_cache",
   ".turbo"

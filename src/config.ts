@@ -61,11 +61,17 @@ export type SpecGuardConfig = {
     timeoutMs?: number;
     promptTemplate?: string;
   };
+  output?: {
+    specsDir?: string;
+  };
   docs?: {
     mode?: "lean" | "full";
     internalDir?: string;
   };
 };
+
+/** Single source of truth for the default specs output directory */
+export const DEFAULT_SPECS_DIR = ".specs";
 
 const DEFAULT_CONFIG: Required<SpecGuardConfig> = {
   project: {
@@ -96,8 +102,13 @@ const DEFAULT_CONFIG: Required<SpecGuardConfig> = {
       "log",
       "tmp",
       "cache",
-      "specs-out",
-      "ghost-out"
+      ".specs",
+      "ghost-out",
+      "ios",
+      "android",
+      ".expo",
+      ".turbo",
+      "web-build"
     ],
     paths: []
   },
@@ -143,6 +154,9 @@ const DEFAULT_CONFIG: Required<SpecGuardConfig> = {
     args: [],
     timeoutMs: 120000,
     promptTemplate: ""
+  },
+  output: {
+    specsDir: DEFAULT_SPECS_DIR
   },
   docs: {
     mode: "lean",
@@ -437,6 +451,9 @@ function mergeConfig(base: SpecGuardConfig, override: SpecGuardConfig): SpecGuar
       args: mergeArrays(base.llm?.args, override.llm?.args),
       timeoutMs: override.llm?.timeoutMs ?? base.llm?.timeoutMs ?? 120000,
       promptTemplate: override.llm?.promptTemplate ?? base.llm?.promptTemplate ?? ""
+    },
+    output: {
+      specsDir: override.output?.specsDir ?? base.output?.specsDir ?? DEFAULT_SPECS_DIR
     },
     docs: {
       mode: override.docs?.mode ?? base.docs?.mode ?? "lean",

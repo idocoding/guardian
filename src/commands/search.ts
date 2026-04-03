@@ -4,6 +4,7 @@ import yaml from "js-yaml";
 import { loadHeatmap, type DriftHeatmap } from "../extract/compress.js";
 import type { ArchitectureSnapshot, UxSnapshot } from "../extract/types.js";
 import { resolveMachineInputDir } from "../output-layout.js";
+import { DEFAULT_SPECS_DIR } from "../config.js";
 
 type SearchType = "models" | "endpoints" | "components" | "modules" | "tasks";
 
@@ -22,7 +23,7 @@ type SearchMatch = {
 };
 
 export async function runSearch(options: SearchOptions): Promise<void> {
-  const inputDir = await resolveMachineInputDir(options.input || "specs-out");
+  const inputDir = await resolveMachineInputDir(options.input || DEFAULT_SPECS_DIR);
   const { architecture, ux } = await loadSnapshots(inputDir);
   const heatmap = await loadHeatmap(inputDir);
   const types = normalizeTypes(options.types);

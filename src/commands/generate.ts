@@ -3,6 +3,7 @@ import path from "node:path";
 import { buildSnapshots } from "../extract/index.js";
 import { renderContextBlock } from "../extract/context-block.js";
 import { getOutputLayout } from "../output-layout.js";
+import { DEFAULT_SPECS_DIR } from "../config.js";
 import { analyzeDepth } from "../extract/analyzers/depth.js";
 import type { StructuralIntelligenceReport } from "../extract/types.js";
 
@@ -29,7 +30,7 @@ export async function runGenerate(options: GenerateOptions): Promise<void> {
     throw new Error("`specguard generate` currently supports `--ai-context` only.");
   }
 
-  const outputRoot = path.resolve(options.output ?? "specs-out");
+  const outputRoot = path.resolve(options.output ?? DEFAULT_SPECS_DIR);
   const layout = getOutputLayout(outputRoot);
   const { architecture, ux } = await buildSnapshots({
     projectRoot: options.projectRoot,

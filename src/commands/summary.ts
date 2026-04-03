@@ -5,6 +5,7 @@ import { renderExecutiveSummary } from "../extract/docs.js";
 import { loadArchitectureSummary, loadArchitectureDiff, loadHeatmap } from "../extract/compress.js";
 import type { ArchitectureSnapshot, UxSnapshot } from "../extract/types.js";
 import { resolveMachineInputDir } from "../output-layout.js";
+import { DEFAULT_SPECS_DIR } from "../config.js";
 
 export type SummaryOptions = {
   input: string;
@@ -12,7 +13,7 @@ export type SummaryOptions = {
 };
 
 export async function runSummary(options: SummaryOptions): Promise<void> {
-  const inputDir = await resolveMachineInputDir(options.input || "specs-out");
+  const inputDir = await resolveMachineInputDir(options.input || DEFAULT_SPECS_DIR);
   const architecturePath = path.join(inputDir, "architecture.snapshot.yaml");
   const uxPath = path.join(inputDir, "ux.snapshot.yaml");
 
