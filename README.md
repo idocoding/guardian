@@ -346,13 +346,17 @@ Claude Code reads CLAUDE.md → fresh architecture context
 ## GitHub Action
 
 ```yaml
-uses: ./
-with:
-  project-root: .
-  output: specs-out
+- name: Install Guardian
+  run: npm install -g @toolbaux/guardian
+
+- name: Extract & check
+  run: |
+    guardian extract --output .specs
+    guardian generate --ai-context --output .specs
+    guardian drift
 ```
 
-See [`.github/workflows/guardian-example.yml`](./.github/workflows/guardian-example.yml).
+See [`.github/workflows/guardian.yml`](./.github/workflows/guardian.yml).
 
 ## Development
 
