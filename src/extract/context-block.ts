@@ -176,10 +176,32 @@ export function renderContextBlock(
     }
   }
 
+  // Deep intelligence pointers — tell AI agents where to find more detail
+  lines.push("### Deep Intelligence");
+  lines.push("");
+  lines.push("The above is a summary. For deeper analysis, these files and commands are available:");
+  lines.push("");
+  lines.push("**Files** (read directly when you need detail):");
+  lines.push("- `.specs/machine/architecture.snapshot.yaml` — full module map with every file, export symbol, import edge");
+  lines.push("- `.specs/machine/codebase-intelligence.json` — API registry with handler code, service calls, request/response schemas");
+  lines.push("- `.specs/machine/structural-intelligence.json` — depth/complexity analysis per module");
+
+  if (architecture.dependencies.file_graph.length > 0) {
+    lines.push("- `.specs/machine/architecture.snapshot.yaml → dependencies.file_graph` — file-level dependency edges");
+  }
+  if (architecture.analysis?.circular_dependencies?.length > 0) {
+    lines.push(`- Circular dependencies detected: ${architecture.analysis.circular_dependencies.length} cycles (check snapshot)`);
+  }
+
+  lines.push("");
+  lines.push("**Commands** (run in terminal for targeted lookup):");
+  lines.push("- `guardian search --query \"<feature>\"` — search endpoints, models, components, modules by keyword");
+  lines.push("- `guardian context --focus \"<feature>\"` — generate focused context for a specific area");
+  lines.push("- `guardian drift` — check architectural drift metrics");
+  lines.push("");
+
   lines.push("<!-- /guardian:context -->");
 
-  // No global truncation — each section self-limits via .slice().
-  // Every section is guaranteed to appear with at least a few entries.
   return lines.join("\n");
 }
 

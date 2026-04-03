@@ -13,7 +13,7 @@ import { describe, it, expect } from "vitest";
 import { renderContextBlock } from "../../src/extract/context-block.js";
 import { DEFAULT_SPECS_DIR } from "../../src/config.js";
 import { getOutputLayout } from "../../src/output-layout.js";
-import type { ArchitectureSnapshot, UxSnapshot, ModuleSummary, BackendAnalysis, FrontendAnalysis } from "../../src/extract/types.js";
+import type { ArchitectureSnapshot, UxSnapshot, ModuleSummary } from "../../src/extract/types.js";
 
 // ========== HELPERS ==========
 
@@ -50,7 +50,7 @@ function makeArch(modules: ModuleSummary[], overrides?: Partial<ArchitectureSnap
     endpoint_model_usage: [],
     cross_stack_contracts: [],
     tasks: [],
-    runtime: { docker: null, configs: [], ci: [] },
+    runtime: { dockerfiles: [], services: [], manifests: [], shell_scripts: [] },
     data_flows: [],
     tests: [],
     dependencies: { module_graph: [], file_graph: [] },
@@ -139,7 +139,7 @@ describe("Context block rendering", () => {
 
   it("includes Module Dependencies section", () => {
     const arch = makeArch([makeModule("a"), makeModule("b")], {
-      dependencies: { module_graph: [{ from: "a", to: "b" }], file_graph: [] },
+      dependencies: { module_graph: [{ from: "a", to: "b", file: "a.ts" }], file_graph: [] },
     });
     const output = renderContextBlock(arch, emptyUx);
     expect(output).toContain("### Module Dependencies");
@@ -182,8 +182,8 @@ describe("Context block rendering", () => {
     const ux: UxSnapshot = {
       version: "0.2",
       components: [
-        { id: "c1", name: "Button", file: "Button.tsx", export_kind: "named", props: [], children: [] },
-        { id: "c2", name: "App", file: "App.tsx", export_kind: "default", props: [], children: [] },
+        { id: "c1", name: "Button", file: "Button.tsx", export_kind: "named", kind: "component" },
+        { id: "c2", name: "App", file: "App.tsx", export_kind: "default", kind: "component" },
       ],
       component_graph: [],
       pages: [],
@@ -243,5 +243,51 @@ describe("Endpoint sanity", () => {
     // The context shows "2 endpoints" — both are included.
     // This test documents the current behavior. Future fix: filter by framework pattern.
     expect(output).toContain("2 endpoints");
+  });
+});
+
+// ========== DEEP INTELLIGENCE SECTION ==========
+
+describe("Deep Intelligence footer", () => {
+  it("includes Deep Intelligence section with file pointers", () => {
+    const output = renderContextBlock(makeArch([]), emptyUx);
+    expect(output).toContain("### Deep Intelligence");
+    expect(output).toContain("architecture.snapshot.yaml");
+    expect(output).toContain("codebase-intelligence.json");
+    expect(output).toContain("structural-intelligence.json");
+  });
+
+  it("includes guardian search and context commands", () => {
+    const output = renderContextBlock(makeArch([]), emptyUx);
+    expect(output).toContain('guardian search --query');
+    expect(output).toContain('guardian context --focus');
+    expect(output).toContain('guardian drift');
+  });
+
+  it("mentions circular dependencies when present", () => {
+    const arch = makeArch([], {
+      analysis: {
+        circular_dependencies: [["a", "b", "a"]],
+        orphan_modules: [], orphan_files: [], frontend_orphan_files: [],
+        module_usage: {}, unused_exports: [], frontend_unused_exports: [],
+        unused_endpoints: [], frontend_unused_api_calls: [],
+        duplicate_functions: [], similar_functions: [],
+        test_coverage: { untested_source_files: [], test_files_missing_source: [], coverage_map: [] },
+        endpoint_test_coverage: [], function_test_coverage: [],
+      },
+    });
+    const output = renderContextBlock(arch, emptyUx);
+    expect(output).toContain("Circular dependencies detected: 1 cycles");
+  });
+
+  it("mentions file graph when present", () => {
+    const arch = makeArch([], {
+      dependencies: {
+        module_graph: [],
+        file_graph: [{ from: "a.ts", to: "b.ts" }],
+      },
+    });
+    const output = renderContextBlock(arch, emptyUx);
+    expect(output).toContain("dependencies.file_graph");
   });
 });
