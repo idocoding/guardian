@@ -192,10 +192,10 @@ describe("Config Loader", () => {
       await expect(loadSpecGuardConfig({ configPath: badPath })).rejects.toThrow(/Config path not found/);
     });
 
-    it("throws error when specguard.config.json is missing in provided configPath directory", async () => {
+    it("throws error when guardian.config.json is missing in provided configPath directory", async () => {
       const emptyDir = path.join(FIXTURE_DIR, "empty-dir");
       await fs.mkdir(emptyDir, { recursive: true });
-      await expect(loadSpecGuardConfig({ configPath: emptyDir })).rejects.toThrow(/specguard.config.json not found/);
+      await expect(loadSpecGuardConfig({ configPath: emptyDir })).rejects.toThrow(/guardian.config.json not found/);
       await fs.rm(emptyDir, { recursive: true });
     });
 

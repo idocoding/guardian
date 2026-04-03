@@ -41,7 +41,7 @@ describe("loadBackendExtractionCache", () => {
       config: {},
     });
     expect(result.cache.files).toEqual({});
-    expect(result.cache.version).toContain("specguard-backend-cache");
+    expect(result.cache.version).toContain("guardian-backend-cache");
     expect(result.cachePath).toContain("file-hashes.json");
   });
 

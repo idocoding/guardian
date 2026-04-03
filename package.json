@@ -1,6 +1,6 @@
 {
   "name": "@toolbaux/guardian",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "type": "module",
   "description": "Architectural intelligence for codebases. Verify that AI-generated code matches your architectural intent.",
   "keywords": [
@@ -41,7 +41,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run test:critical && npm run build",
+    "test:critical": "vitest run tests/critical/",
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",

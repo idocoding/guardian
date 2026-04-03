@@ -25,11 +25,20 @@ export async function runContext(options: ContextOptions): Promise<void> {
     loadHeatmap(inputDir)
   ]);
 
+  // Load structural intelligence if available
+  let si: typeof architecture.structural_intelligence | undefined;
+  try {
+    const siPath = path.join(inputDir, "structural-intelligence.json");
+    const siRaw = await fs.readFile(siPath, "utf8");
+    si = JSON.parse(siRaw);
+  } catch { /* not available */ }
+
   const content = renderContextBlock(architecture, ux, {
     focusQuery: options.focus,
     maxLines: normalizeMaxLines(options.maxLines),
     diff,
-    heatmap
+    heatmap,
+    structuralIntelligence: si
   });
 
   if (!options.output) {

@@ -4,29 +4,34 @@ import type { ArchitectureSnapshot, UxSnapshot } from "../../src/extract/types.j
 
 function makeArch(overrides?: Partial<ArchitectureSnapshot>): ArchitectureSnapshot {
   return {
-    project_name: "test-project",
-    workspace_root: ".",
-    backend_root: ".",
-    frontend_root: "./frontend",
-    modules: overrides?.modules ?? [],
-    endpoints: overrides?.endpoints ?? [],
-    data_models: overrides?.data_models ?? [],
-    endpoint_model_usage: overrides?.endpoint_model_usage ?? [],
-    data_flows: overrides?.data_flows ?? [],
-    runtime: overrides?.runtime ?? {
-      dockerfiles: [],
-      services: [],
-      config_files: [],
-      shell_scripts: [],
-      manifests: [],
+    version: "1.0",
+    metadata: { generated_at: "", duration_ms: 0, target_backend: ".", target_frontend: "." },
+    project: {
+      name: "test-project", workspace_root: ".", backend_root: ".", frontend_root: "./frontend",
+      resolution_source: "auto", entrypoints: [],
     },
-    tasks: overrides?.tasks ?? [],
-    enums: overrides?.enums ?? [],
-    constants: overrides?.constants ?? [],
-    dependencies: overrides?.dependencies ?? {
-      module_graph: [],
-      file_graph: [],
-      circular: [],
+    modules: [],
+    frontend_files: [],
+    frontend: { pages: [], api_calls: [] },
+    endpoints: [],
+    data_models: [],
+    enums: [],
+    constants: [],
+    endpoint_model_usage: [],
+    cross_stack_contracts: [],
+    tasks: [],
+    runtime: { docker: null, configs: [], ci: [] },
+    data_flows: [],
+    tests: [],
+    dependencies: { module_graph: [], file_graph: [] },
+    drift: null as any,
+    analysis: {
+      circular_dependencies: [], orphan_modules: [], orphan_files: [], frontend_orphan_files: [],
+      module_usage: {}, unused_exports: [], frontend_unused_exports: [],
+      unused_endpoints: [], frontend_unused_api_calls: [],
+      duplicate_functions: [], similar_functions: [],
+      test_coverage: { untested_source_files: [], test_files_missing_source: [], coverage_map: [] },
+      endpoint_test_coverage: [], function_test_coverage: [],
     },
     ...overrides,
   } as ArchitectureSnapshot;
@@ -34,20 +39,19 @@ function makeArch(overrides?: Partial<ArchitectureSnapshot>): ArchitectureSnapsh
 
 function makeUx(overrides?: Partial<UxSnapshot>): UxSnapshot {
   return {
-    components: overrides?.components ?? [],
-    pages: overrides?.pages ?? [],
-    component_graph: overrides?.component_graph ?? [],
-    state_stores: overrides?.state_stores ?? [],
-    actions: overrides?.actions ?? [],
+    version: "0.2",
+    components: [],
+    component_graph: [],
+    pages: [],
     ...overrides,
   } as UxSnapshot;
 }
 
 describe("renderContextBlock", () => {
-  it("renders the specguard:context markers", () => {
+  it("renders the guardian:context markers", () => {
     const result = renderContextBlock(makeArch(), makeUx());
-    expect(result).toContain("<!-- specguard:context ");
-    expect(result).toContain("<!-- /specguard:context -->");
+    expect(result).toContain("<!-- guardian:context ");
+    expect(result).toContain("<!-- /guardian:context -->");
   });
 
   it("renders Codebase Map header", () => {
@@ -75,7 +79,6 @@ describe("renderContextBlock", () => {
           { from: "b.ts", to: "c.ts" },
           { from: "c.ts", to: "a.ts" },
         ],
-        circular: [],
       },
     });
     const result = renderContextBlock(arch, makeUx());
@@ -109,50 +112,23 @@ describe("renderContextBlock", () => {
     expect(result).toContain("### Focus: stripe");
   });
 
-  it("truncates output at maxLines", () => {
-    const models = Array.from({ length: 20 }, (_, i) => ({
-      name: `Model${i}`,
-      file: "m.py",
-      framework: "sqlalchemy",
-      fields: ["id"],
-      relationships: [],
-      field_details: [],
-    })) as any[];
-    const endpoints = Array.from({ length: 20 }, (_, i) => ({
-      id: `ep${i}`,
-      method: "GET",
-      path: `/api/item${i}`,
-      handler: `handler${i}`,
-      file: "r.ts",
-      module: "api",
-    })) as any[];
-    const usages = models.map((m, i) => ({
-      endpoint_id: `ep${i}`,
-      endpoint: `GET /api/item${i}`,
-      models: [{ name: m.name, access: "read" }],
-    }));
-    const fileEdges = Array.from({ length: 20 }, (_, i) => ({
-      from: `a${i}.ts`,
-      to: `b${i}.ts`,
-    }));
+  it("does not truncate — all sections always present", () => {
+    // We removed global truncation. Per-section limits handle large projects.
     const arch = makeArch({
-      endpoints,
-      data_models: models,
-      endpoint_model_usage: usages,
-      dependencies: { module_graph: [], file_graph: fileEdges, circular: [] },
+      endpoints: Array.from({ length: 20 }, (_, i) => ({
+        id: `ep${i}`, method: "GET", path: `/api/item${i}`, handler: `h${i}`, file: "r.ts", module: "api",
+      })) as any[],
     });
-    const result = renderContextBlock(arch, makeUx(), { maxLines: 10 });
-    expect(result).toContain("context truncated for line budget");
+    const result = renderContextBlock(arch, makeUx());
+    expect(result).not.toContain("truncated");
+    expect(result).toContain("<!-- /guardian:context -->");
   });
 
   it("Component Import Reference renders export kind", () => {
     const ux = makeUx({
       components: [
-        { id: "c1", name: "Button", file: "Button.tsx", export_kind: "default", kind: "component" } as any,
-        { id: "c2", name: "Modal", file: "Modal.tsx", export_kind: "named", kind: "component" } as any,
-      ],
-      pages: [
-        { path: "/", component_id: "c1", components_direct_ids: ["c2"], components_descendants_ids: [] } as any,
+        { id: "c1", name: "Button", file: "Button.tsx", export_kind: "default", props: [], children: [] } as any,
+        { id: "c2", name: "Modal", file: "Modal.tsx", export_kind: "named", props: [], children: [] } as any,
       ],
     });
     const result = renderContextBlock(makeArch(), ux);

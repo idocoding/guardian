@@ -47,59 +47,36 @@ function runCli(command: string): string {
 describe("CLI End-to-End", () => {
   beforeAll(async () => {
     await scaffold();
-    // Ensure dist is built
     execSync("npm run build", { cwd: PROJECT_ROOT, encoding: "utf8" });
   });
   afterAll(teardown);
 
   it("`generate --ai-context` produces architecture-context.md", () => {
     runCli("generate . --ai-context");
-    const contextPath = path.join(
-      FIXTURE_DIR,
-      "specs-out",
-      "machine",
-      "architecture-context.md"
-    );
+    const contextPath = path.join(FIXTURE_DIR, ".specs", "machine", "architecture-context.md");
     const exists = require("node:fs").existsSync(contextPath);
     expect(exists).toBe(true);
 
     const content = require("node:fs").readFileSync(contextPath, "utf8");
-    expect(content).toContain("specguard:ai-context");
+    expect(content).toContain("guardian:ai-context");
     expect(content).toContain("Codebase Map");
   });
 
   it("context file includes project name from directory", () => {
-    const contextPath = path.join(
-      FIXTURE_DIR,
-      "specs-out",
-      "machine",
-      "architecture-context.md"
-    );
+    const contextPath = path.join(FIXTURE_DIR, ".specs", "machine", "architecture-context.md");
     const content = require("node:fs").readFileSync(contextPath, "utf8");
-    // SpecGuard derives project name from directory, not package.json
     expect(content).toContain("cli-e2e");
   });
 
   it("`extract` produces architecture snapshot YAML", () => {
     runCli("extract .");
-    const snapshotPath = path.join(
-      FIXTURE_DIR,
-      "specs-out",
-      "machine",
-      "architecture.snapshot.yaml"
-    );
+    const snapshotPath = path.join(FIXTURE_DIR, ".specs", "machine", "architecture.snapshot.yaml");
     const exists = require("node:fs").existsSync(snapshotPath);
     expect(exists).toBe(true);
   });
 
   it("`extract` produces infra.md with npm manifest", () => {
-    const infraPath = path.join(
-      FIXTURE_DIR,
-      "specs-out",
-      "machine",
-      "docs",
-      "infra.md"
-    );
+    const infraPath = path.join(FIXTURE_DIR, ".specs", "machine", "docs", "infra.md");
     const exists = require("node:fs").existsSync(infraPath);
     expect(exists).toBe(true);
 
@@ -109,13 +86,7 @@ describe("CLI End-to-End", () => {
   });
 
   it("`extract` produces docs index listing infra.md", () => {
-    const indexPath = path.join(
-      FIXTURE_DIR,
-      "specs-out",
-      "machine",
-      "docs",
-      "index.md"
-    );
+    const indexPath = path.join(FIXTURE_DIR, ".specs", "machine", "docs", "index.md");
     const exists = require("node:fs").existsSync(indexPath);
     expect(exists).toBe(true);
 

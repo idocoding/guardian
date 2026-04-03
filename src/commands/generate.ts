@@ -178,7 +178,7 @@ function renderAiContextMarkdown(
   }
   lines.push(renderContextBlock(architecture, ux, {
     focusQuery: options?.focusQuery,
-    maxLines: options?.maxLines ?? 80,
+    maxLines: options?.maxLines ?? 200,
     structuralIntelligence: options?.structuralIntelligence
   }));
   lines.push("");

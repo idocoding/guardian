@@ -23,7 +23,41 @@ export function renderContextBlock(
     `**Backend:** ${ormModels.length} ORM models + ${schemaModels} schemas · ${architecture.endpoints.length} endpoints · ${architecture.modules.length} modules`
   );
   lines.push(`**Frontend:** ${ux.components.length} components · ${ux.pages.length} pages`);
+
+  // Show all roots if multi-root project
+  const roots = architecture.project.roots;
+  if (roots && roots.length > 2) {
+    lines.push(`**Roots:** ${roots.join(", ")}`);
+  }
   lines.push("");
+
+  // Module map with key exports — the most useful section for AI context
+  const modulesWithExports = architecture.modules.filter(m => m.exports.length > 0 || m.files.length > 0);
+  if (modulesWithExports.length > 0) {
+    lines.push("### Module Map");
+    for (const mod of modulesWithExports) {
+      const allSymbols = mod.exports.flatMap(e => e.symbols).filter(Boolean);
+      const topSymbols = allSymbols.slice(0, 6);
+      const symbolStr = topSymbols.length > 0
+        ? ` — exports: ${topSymbols.join(", ")}${allSymbols.length > 6 ? ` (+${allSymbols.length - 6} more)` : ""}`
+        : ` — ${mod.files.length} files`;
+      const epCount = mod.endpoints.length > 0 ? ` · ${mod.endpoints.length} endpoints` : "";
+      lines.push(`- **${mod.id}** (${mod.layer})${epCount}${symbolStr}`);
+    }
+    lines.push("");
+  }
+
+  // Cross-module dependencies
+  const crossEdges = architecture.dependencies.module_graph.filter(
+    e => e.from !== e.to
+  );
+  if (crossEdges.length > 0) {
+    lines.push("### Module Dependencies");
+    for (const edge of crossEdges.slice(0, 10)) {
+      lines.push(`- ${edge.from} → ${edge.to}`);
+    }
+    lines.push("");
+  }
 
   const couplingFiles = pickTopCouplingFiles(architecture, options?.heatmap, 5);
   if (couplingFiles.length > 0) {
@@ -144,14 +178,9 @@ export function renderContextBlock(
 
   lines.push("<!-- /guardian:context -->");
 
-  const maxLines = options?.maxLines ?? 120;
-  if (lines.length <= maxLines) {
-    return lines.join("\n");
-  }
-
-  return [...lines.slice(0, maxLines - 2), "- context truncated for line budget", "<!-- /guardian:context -->"].join(
-    "\n"
-  );
+  // No global truncation — each section self-limits via .slice().
+  // Every section is guaranteed to appear with at least a few entries.
+  return lines.join("\n");
 }
 
 function tokenize(value: string): string[] {
