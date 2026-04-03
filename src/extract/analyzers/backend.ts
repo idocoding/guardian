@@ -1264,7 +1264,8 @@ function emptyPythonFileResult(): CachedPythonFileResult {
 
 export async function analyzeBackend(
   backendRoot: string,
-  config: SpecGuardConfig
+  config: SpecGuardConfig,
+  workspaceRoot?: string
 ): Promise<BackendAnalysis> {
   const root = path.resolve(backendRoot);
   const baseRoot = path.dirname(root);
@@ -1345,8 +1346,9 @@ export async function analyzeBackend(
   codeFiles.sort((a, b) => a.localeCompare(b));
 
   const knownFiles = new Set(codeFiles);
+  const cacheRoot = workspaceRoot ? path.resolve(workspaceRoot) : baseRoot;
   const { cachePath, cache } = await loadBackendExtractionCache({
-    projectRoot: baseRoot,
+    projectRoot: cacheRoot,
     config
   });
   const activeAbsoluteFiles = new Set(codeFiles.map((file) => path.join(baseRoot, file)));

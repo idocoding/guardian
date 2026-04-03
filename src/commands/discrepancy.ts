@@ -1,5 +1,5 @@
 /**
- * `specguard discrepancy` — diff current codebase intelligence against a baseline.
+ * `guardian discrepancy` — diff current codebase intelligence against a baseline.
  *
  * Reads:
  *   - specs-out/machine/codebase-intelligence.json
@@ -36,7 +36,7 @@ export async function runDiscrepancy(options: DiscrepancyOptions): Promise<void>
   const intelPath = path.join(layout.machineDir, "codebase-intelligence.json");
   const intel = await loadCodebaseIntelligence(intelPath).catch(() => {
     throw new Error(
-      `Could not load codebase-intelligence.json from ${intelPath}. Run \`specguard intel --specs ${options.specs}\` first.`
+      `Could not load codebase-intelligence.json from ${intelPath}. Run \`guardian intel --specs ${options.specs}\` first.`
     );
   });
 

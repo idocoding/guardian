@@ -311,7 +311,7 @@ async function createTempCopy(
   sourceRoot: string,
   config: SpecGuardConfig
 ): Promise<string> {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "specguard-sim-"));
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "guardian-sim-"));
   const ignore = createIgnoreMatcher(config, sourceRoot);
 
   await fs.cp(sourceRoot, tempRoot, {

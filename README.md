@@ -105,6 +105,39 @@ guardian doc-html
 
 All extraction uses Tree-Sitter AST parsing — deterministic, no LLM involved.
 
+## LLM Usage — Opt-In Only
+
+> **Important:** Guardian's core commands (`extract`, `generate`, `context`, `drift`, `search`, `init`) **never call an LLM**. All extraction is deterministic AST parsing — no API keys needed, no background AI calls, no cost.
+
+Two commands **optionally** use an LLM, and **only when you explicitly configure it**:
+
+| Command | What the LLM does | Runs automatically? |
+|---------|-------------------|-------------------|
+| `guardian doc-generate` | Adds narrative summaries to product docs | **No** — manual command only |
+| `guardian guard --task "..."` | Generates a code patch from a task description | **No** — manual command only |
+
+**If you never set API keys, no LLM is ever called.** These commands degrade gracefully — `doc-generate` produces docs without narrative sections, and `guard` prints context instead of generating patches.
+
+### Configuring LLM (optional)
+
+```bash
+# Option 1: Cloud LLM (OpenAI-compatible endpoint)
+export GUARDIAN_LLM_ENDPOINT="https://api.openai.com/v1"
+export GUARDIAN_LLM_API_KEY="sk-..."
+export GUARDIAN_LLM_MODEL="gpt-4o"         # optional, defaults to gpt-4o
+
+# Option 2: Local Ollama (no API key needed, auto-detected)
+# Just have Ollama running on localhost:11434
+export GUARDIAN_OLLAMA_HOST="http://localhost:11434"  # optional, this is the default
+export GUARDIAN_OLLAMA_MODEL="llama3.2"                # optional, this is the default
+
+# Option 3: Shell command (for guardian guard)
+# Set in guardian.config.json:
+# { "llm": { "command": "ollama", "args": ["run", "llama3"] } }
+```
+
+**No pre-commit hook, VSCode extension, or automated workflow ever triggers LLM calls.** The hook only runs `extract` + `context` (pure AST).
+
 ## What Guardian Generates
 
 **Workflow sequence diagrams** — Mermaid diagrams for your most complex endpoints, showing the full call chain from client through handler to services and data stores.

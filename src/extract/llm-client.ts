@@ -2,16 +2,16 @@
  * LLM Client — thin HTTP client for LLM-powered doc generation.
  *
  * Resolution order:
- *   1. Configured LLM  — SPECGUARD_LLM_ENDPOINT + SPECGUARD_LLM_API_KEY both set
- *   2. Ollama fallback — SPECGUARD_LLM_ENDPOINT/KEY not set, Ollama reachable at localhost
+ *   1. Configured LLM  — GUARDIAN_LLM_ENDPOINT + GUARDIAN_LLM_API_KEY both set
+ *   2. Ollama fallback — GUARDIAN_LLM_ENDPOINT/KEY not set, Ollama reachable at localhost
  *   3. None            — returns null from loadLlmConfig(), callers write placeholder text
  *
  * Env vars:
- *   SPECGUARD_LLM_ENDPOINT   — full URL e.g. https://api.anthropic.com/v1/messages
- *   SPECGUARD_LLM_API_KEY    — API key (not required for Ollama)
- *   SPECGUARD_LLM_MODEL      — model ID (optional)
- *   SPECGUARD_OLLAMA_HOST    — Ollama base URL (default: http://localhost:11434)
- *   SPECGUARD_OLLAMA_MODEL   — Ollama model (default: llama3.2)
+ *   GUARDIAN_LLM_ENDPOINT   — full URL e.g. https://api.anthropic.com/v1/messages
+ *   GUARDIAN_LLM_API_KEY    — API key (not required for Ollama)
+ *   GUARDIAN_LLM_MODEL      — model ID (optional)
+ *   GUARDIAN_OLLAMA_HOST    — Ollama base URL (default: http://localhost:11434)
+ *   GUARDIAN_OLLAMA_MODEL   — Ollama model (default: llama3.2)
  *
  * Wire formats (auto-detected from endpoint URL):
  *   anthropic  — POST /v1/messages        { model, max_tokens, system, messages }
@@ -44,22 +44,22 @@ const DEFAULT_MAX_TOKENS = 2048;
  * Load LLM config from environment variables.
  *
  * Resolution order:
- *   1. SPECGUARD_LLM_ENDPOINT + SPECGUARD_LLM_API_KEY → configured cloud/local LLM
- *   2. Ollama reachable at SPECGUARD_OLLAMA_HOST (or localhost:11434) → Ollama fallback
+ *   1. GUARDIAN_LLM_ENDPOINT + GUARDIAN_LLM_API_KEY → configured cloud/local LLM
+ *   2. Ollama reachable at GUARDIAN_OLLAMA_HOST (or localhost:11434) → Ollama fallback
  *   3. null → no LLM available
  */
 export async function loadLlmConfig(): Promise<LlmConfig | null> {
   // Priority 1: explicit endpoint + key
-  const endpoint = process.env["SPECGUARD_LLM_ENDPOINT"];
-  const apiKey = process.env["SPECGUARD_LLM_API_KEY"];
+  const endpoint = process.env["GUARDIAN_LLM_ENDPOINT"];
+  const apiKey = process.env["GUARDIAN_LLM_API_KEY"];
   if (endpoint && apiKey) {
-    const model = process.env["SPECGUARD_LLM_MODEL"] ?? DEFAULT_CLOUD_MODEL;
+    const model = process.env["GUARDIAN_LLM_MODEL"] ?? DEFAULT_CLOUD_MODEL;
     return { endpoint, apiKey, model, provider: detectProvider(endpoint) };
   }
 
   // Priority 2: Ollama fallback
-  const ollamaHost = process.env["SPECGUARD_OLLAMA_HOST"] ?? DEFAULT_OLLAMA_HOST;
-  const ollamaModel = process.env["SPECGUARD_OLLAMA_MODEL"] ?? DEFAULT_OLLAMA_MODEL;
+  const ollamaHost = process.env["GUARDIAN_OLLAMA_HOST"] ?? DEFAULT_OLLAMA_HOST;
+  const ollamaModel = process.env["GUARDIAN_OLLAMA_MODEL"] ?? DEFAULT_OLLAMA_MODEL;
   if (await isOllamaReachable(ollamaHost)) {
     return {
       endpoint: `${ollamaHost}/api/chat`,
@@ -77,10 +77,10 @@ export async function loadLlmConfig(): Promise<LlmConfig | null> {
  * Use when async is not possible, or when you want to skip Ollama discovery.
  */
 export function loadLlmConfigSync(): LlmConfig | null {
-  const endpoint = process.env["SPECGUARD_LLM_ENDPOINT"];
-  const apiKey = process.env["SPECGUARD_LLM_API_KEY"];
+  const endpoint = process.env["GUARDIAN_LLM_ENDPOINT"];
+  const apiKey = process.env["GUARDIAN_LLM_API_KEY"];
   if (!endpoint || !apiKey) return null;
-  const model = process.env["SPECGUARD_LLM_MODEL"] ?? DEFAULT_CLOUD_MODEL;
+  const model = process.env["GUARDIAN_LLM_MODEL"] ?? DEFAULT_CLOUD_MODEL;
   return { endpoint, apiKey, model, provider: detectProvider(endpoint) };
 }
 

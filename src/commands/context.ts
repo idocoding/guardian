@@ -60,7 +60,7 @@ async function loadSnapshots(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new Error(
-        `Could not find snapshots in ${inputDir}. Run \`specguard extract\` first.`
+        `Could not find snapshots in ${inputDir}. Run \`guardian extract\` first.`
       );
     }
     throw error;

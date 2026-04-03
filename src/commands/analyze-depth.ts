@@ -56,7 +56,7 @@ export async function runAnalyzeDepth(options: AnalyzeDepthOptions): Promise<voi
     report.confidence.value >= report.guardrails.enforce_if_confidence_above
   ) {
     console.error(
-      `\n[SpecGuard] CI FAIL: "${options.query}" classified as HIGH complexity (confidence ${report.confidence.value.toFixed(2)}).\n` +
+      `\n[Guardian] CI FAIL: "${options.query}" classified as HIGH complexity (confidence ${report.confidence.value.toFixed(2)}).\n` +
         `Recommended pattern: ${report.recommendation.primary.pattern}\n` +
         `Avoid: ${report.recommendation.avoid.join(", ")}`
     );

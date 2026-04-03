@@ -1,5 +1,5 @@
 /**
- * Docs Loader — loads and parses sections from existing specguard doc files.
+ * Docs Loader — loads and parses sections from existing guardian doc files.
  *
  * Reads from specs-out/machine/docs/:
  *   hld.md         → systemDiagram, couplingHeatmap, backendSubsystems, apiDomainMap

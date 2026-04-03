@@ -27,7 +27,7 @@ type PythonImportReference = {
 
 export async function runGenerate(options: GenerateOptions): Promise<void> {
   if (!options.aiContext) {
-    throw new Error("`specguard generate` currently supports `--ai-context` only.");
+    throw new Error("`guardian generate` currently supports `--ai-context` only.");
   }
 
   const outputRoot = path.resolve(options.output ?? DEFAULT_SPECS_DIR);
@@ -41,7 +41,7 @@ export async function runGenerate(options: GenerateOptions): Promise<void> {
     configPath: options.configPath
   });
 
-  // Load persisted Structural Intelligence reports emitted by `specguard extract`
+  // Load persisted Structural Intelligence reports emitted by `guardian extract`
   const siReports = await loadStructuralIntelligenceReports(layout.machineDir);
 
   // If a --focus query is provided, prepend a real-time SI report for that query

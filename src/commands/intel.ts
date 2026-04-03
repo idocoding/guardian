@@ -1,10 +1,10 @@
 /**
- * `specguard intel` — build codebase-intelligence.json from existing snapshots.
+ * `guardian intel` — build codebase-intelligence.json from existing snapshots.
  *
  * Reads:  specs-out/machine/architecture.snapshot.yaml + ux.snapshot.yaml
  * Writes: specs-out/machine/codebase-intelligence.json
  *
- * Also auto-runs at the end of `specguard extract`.
+ * Also auto-runs at the end of `guardian extract`.
  */
 
 import path from "node:path";

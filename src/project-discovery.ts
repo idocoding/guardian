@@ -100,7 +100,7 @@ export async function resolveProjectPaths(
 
 export function logResolvedProjectPaths(resolved: ResolvedProjectPaths): void {
   console.log(
-    `SpecGuard roots (${resolved.resolutionSource}): workspace=${resolved.workspaceRoot} backend=${resolved.backendRoot} frontend=${resolved.frontendRoot}`
+    `Guardian roots (${resolved.resolutionSource}): workspace=${resolved.workspaceRoot} backend=${resolved.backendRoot} frontend=${resolved.frontendRoot}`
   );
 }
 

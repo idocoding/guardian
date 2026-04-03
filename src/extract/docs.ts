@@ -252,7 +252,7 @@ function renderIndex(
   const internalDir = options.internalDir ?? "internal";
 
   return [
-    section("SpecGuard Overview"),
+    section("Guardian Overview"),
     `Project: **${architecture.project.name}**\n\n`,
     renderTable(
       ["Metric", "Count", "Notes"],
@@ -278,7 +278,7 @@ function renderIndex(
 
 function renderHumanRootReadme(architecture: ArchitectureSnapshot): string {
   return [
-    "# SpecGuard Output",
+    "# Guardian Output",
     "",
     `Project: **${architecture.project.name}**`,
     "",
@@ -508,7 +508,7 @@ function renderHumanDataAndFlows(
         [
           "unverified",
           String(architecture.cross_stack_contracts.length - verified.length),
-          "SpecGuard could not confidently infer enough fields yet"
+          "Guardian could not confidently infer enough fields yet"
         ]
       ]
     )
@@ -637,7 +637,7 @@ export function renderExecutiveSummary(
   summaryLines.push(`Project: **${architecture.project.name}**\n\n`);
   summaryLines.push(`Snapshot date: **${formatTimestamp(generatedAt)}**\n\n`);
   summaryLines.push(
-    "SpecGuard produces living, machine‑verified documentation for your codebase so teams can align on architecture, detect drift, and share an accurate system spec without manual doc maintenance.\n\n"
+    "Guardian produces living, machine‑verified documentation for your codebase so teams can align on architecture, detect drift, and share an accurate system spec without manual doc maintenance.\n\n"
   );
 
   summaryLines.push("## Vision\n\n");
@@ -2722,7 +2722,7 @@ function renderDiff(
   lines.push(section("Snapshot Changelog"));
 
   if (!meta?.diff) {
-    lines.push("*No previous summary available. Run SpecGuard twice to generate a diff.*\n\n");
+    lines.push("*No previous summary available. Run Guardian twice to generate a diff.*\n\n");
     return lines.join("");
   }
 
@@ -2833,7 +2833,7 @@ function renderIntegrationGuide(snapshot: ArchitectureSnapshot): string {
     lines.push(
       `Verified: ${verifiedContracts.length} contracts (${mismatchedCount} mismatched). Unverified: ${unverifiedCount}.`
     );
-    lines.push(" Run `specguard extract --include-file-graph` for richer caller inference.\n\n");
+    lines.push(" Run `guardian extract --include-file-graph` for richer caller inference.\n\n");
 
     if (verifiedContracts.length === 0) {
       lines.push("*No verified frontend/backend contracts detected yet.*\n\n");
@@ -2943,7 +2943,8 @@ export async function writeDocs(
     { name: "tests.md", content: renderTests(architecture) }
   ];
 
-  const fullFiles = [
+  // Internal-only files: richer versions of lean files + files that only exist in full mode
+  const fullOnlyFiles = [
     { name: "index.md", content: renderIndex(architecture, ux, { docsFiles: FULL_INDEX_FILES }) },
     {
       name: "summary.md",
@@ -2965,27 +2966,10 @@ export async function writeDocs(
       })
     },
     { name: "architecture.md", content: renderArchitecture(architecture, { summary, diff, heatmap }) },
-    { name: "ux.md", content: renderUx(ux) },
     { name: "data.md", content: renderData(architecture, "full") },
     { name: "data_dictionary.md", content: renderDataDictionary(architecture) },
-    { name: "integration.md", content: renderIntegrationGuide(architecture) },
-    {
-      name: "diff.md",
-      content: renderDiff(architecture, {
-        summary,
-        diff,
-        previous: options?.previous?.architecture ?? null
-      })
-    },
     { name: "test_coverage.md", content: renderTestCoverage(architecture) },
-    { name: "runtime.md", content: renderRuntime(architecture) },
-    { name: "infra.md", content: renderInfra(architecture) },
-    {
-      name: "hld.md",
-      content: renderHld(architecture, ux, driftHistory, { summary, diff, heatmap })
-    },
     { name: "lld.md", content: renderLld(architecture, ux, "full") },
-    { name: "tests.md", content: renderTests(architecture) }
   ];
 
   const written: string[] = [];
@@ -3000,7 +2984,7 @@ export async function writeDocs(
   if (docsMode === "full") {
     const internalDir = layout.machineInternalDir;
     await fs.mkdir(internalDir, { recursive: true });
-    for (const file of fullFiles) {
+    for (const file of fullOnlyFiles) {
       const target = path.join(internalDir, file.name);
       await fs.writeFile(target, file.content);
       written.push(target);

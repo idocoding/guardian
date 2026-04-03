@@ -46,7 +46,7 @@ export async function runVerifyDrift(options: VerifyDriftOptions): Promise<void>
   const threshold = options.strictThreshold ? parseFloat(options.strictThreshold) : 0.15;
 
   console.log("=========================================");
-  console.log("SpecGuard Drift Verification");
+  console.log("Guardian Drift Verification");
   console.log("=========================================\n");
   console.log(`Current Status: ${drift.status}`);
   console.log(`Current Delta:  ${drift.delta.toFixed(4)}`);

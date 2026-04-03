@@ -1,5 +1,5 @@
 /**
- * `specguard doc-generate` — generate a human-readable, self-updating product document.
+ * `guardian doc-generate` — generate a human-readable, self-updating product document.
  *
  * Reads:
  *   - specs-out/machine/codebase-intelligence.json
@@ -12,8 +12,8 @@
  *   - specs-out/machine/product-document.baseline.json (if --update-baseline)
  *
  * LLM env vars (optional — all deterministic sections write regardless):
- *   SPECGUARD_LLM_ENDPOINT, SPECGUARD_LLM_API_KEY, SPECGUARD_LLM_MODEL
- *   SPECGUARD_OLLAMA_HOST, SPECGUARD_OLLAMA_MODEL
+ *   GUARDIAN_LLM_ENDPOINT, GUARDIAN_LLM_API_KEY, GUARDIAN_LLM_MODEL
+ *   GUARDIAN_OLLAMA_HOST, GUARDIAN_OLLAMA_MODEL
  */
 
 import fs from "node:fs/promises";
@@ -45,7 +45,7 @@ export async function runDocGenerate(options: DocGenerateOptions): Promise<void>
   const llmConfig = await loadLlmConfig();
   if (!llmConfig) {
     console.log("none (deterministic only)");
-    console.log("  Tip: set SPECGUARD_LLM_ENDPOINT + SPECGUARD_LLM_API_KEY, or run Ollama locally, to add narrative summaries.");
+    console.log("  Tip: set GUARDIAN_LLM_ENDPOINT + GUARDIAN_LLM_API_KEY, or run Ollama locally, to add narrative summaries.");
   } else if (llmConfig.provider === "ollama") {
     console.log(`Ollama (${llmConfig.model} at ${llmConfig.endpoint.replace("/api/chat", "")})`);
   } else {
@@ -61,7 +61,7 @@ export async function runDocGenerate(options: DocGenerateOptions): Promise<void>
   const intel = await loadCodebaseIntelligence(intelPath).catch(() => {
     console.log("failed");
     throw new Error(
-      `Could not load ${intelPath}. Run \`specguard intel --specs ${options.specs}\` first.`
+      `Could not load ${intelPath}. Run \`guardian intel --specs ${options.specs}\` first.`
     );
   });
   console.log(
@@ -173,7 +173,7 @@ export async function runDocGenerate(options: DocGenerateOptions): Promise<void>
   if (discrepancies.summary.total_issues > 0) {
     const critical = discrepancies.summary.has_critical ? " (critical changes detected)" : "";
     console.log(
-      `  ⚠ ${discrepancies.summary.total_issues} discrepancy(s) found${critical}. Run \`specguard discrepancy\` for details.`
+      `  ⚠ ${discrepancies.summary.total_issues} discrepancy(s) found${critical}. Run \`guardian discrepancy\` for details.`
     );
   }
 }

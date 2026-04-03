@@ -492,7 +492,7 @@ function renderQualityPage(intel: CodebaseIntelligence, docs: Partial<ExistingDo
   parts.push(`<section id="quality-signals"><h2>Quality Signals</h2>${
     docs.qualitySignals
       ? renderMd(docs.qualitySignals)
-      : `<p class="muted">Run <code>specguard extract</code> to populate quality signals.</p>`
+      : `<p class="muted">Run <code>guardian extract</code> to populate quality signals.</p>`
   }</section>`);
 
   // Pattern registry

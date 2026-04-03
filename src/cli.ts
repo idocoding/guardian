@@ -34,7 +34,7 @@ program
   .argument("[projectRoot]", "Repo or project root", process.cwd())
   .option("--backend-root <path>", "Path to backend root")
   .option("--frontend-root <path>", "Path to frontend root")
-  .option("--config <path>", "Path to specguard.config.json")
+  .option("--config <path>", "Path to guardian.config.json")
   .option("--output <path>", "Output directory", DEFAULT_SPECS_DIR)
   .option("--focus <text>", "Focus the generated AI context on a feature area")
   .option("--max-lines <count>", "Maximum lines for the generated context")
@@ -60,7 +60,7 @@ program
   .option("--frontend-root <path>", "Path to frontend root")
   .option("--output <path>", "Output directory", DEFAULT_SPECS_DIR)
   .option("--include-file-graph", "Include file-level dependency graph", false)
-  .option("--config <path>", "Path to specguard.config.json")
+  .option("--config <path>", "Path to guardian.config.json")
   .option("--docs-mode <mode>", "Docs mode (lean|full)")
   .action(async (projectRoot, options) => {
     await runExtract({
@@ -97,7 +97,7 @@ program
   .option("--output <path>", "Output report path", "specs-out/machine/drift.report.json")
   .option("--baseline [path]", "Write baseline drift file")
   .option("--history [path]", "Append drift history entry")
-  .option("--config <path>", "Path to specguard.config.json")
+  .option("--config <path>", "Path to guardian.config.json")
   .action(async (projectRoot, options) => {
     await runDrift({
       projectRoot,
@@ -116,7 +116,7 @@ program
   .argument("[projectRoot]", "Repo or project root", process.cwd())
   .option("--backend-root <path>", "Path to backend root")
   .option("--frontend-root <path>", "Path to frontend root")
-  .option("--config <path>", "Path to specguard.config.json")
+  .option("--config <path>", "Path to guardian.config.json")
   .option("--baseline <path>", "Path to baseline payload")
   .option("--strict-threshold <val>", "Maximum allowed delta shift (default 0.15)")
   .action(async (projectRoot, options) => {
@@ -137,7 +137,7 @@ program
   .option("--backend-root <path>", "Path to backend root")
   .option("--frontend-root <path>", "Path to frontend root")
   .option("--output <path>", "Output constraints path", "specs-out/machine/constraints.json")
-  .option("--config <path>", "Path to specguard.config.json")
+  .option("--config <path>", "Path to guardian.config.json")
   .action(async (projectRoot, options) => {
     await runConstraints({
       projectRoot,
@@ -159,7 +159,7 @@ program
   .option("--baseline-summary <path>", "Baseline architecture summary path")
   .option("--patch <path>", "Patch file to apply for simulation")
   .option("--mode <mode>", "Simulation mode (soft|hard)")
-  .option("--config <path>", "Path to specguard.config.json")
+  .option("--config <path>", "Path to guardian.config.json")
   .action(async (projectRoot, options) => {
     await runSimulate({
       projectRoot,
@@ -187,7 +187,7 @@ program
   .option("--mode <mode>", "Simulation mode (soft|hard)")
   .option("--llm-command <cmd>", "Override LLM command from config")
   .option("--print-context", "Print an IDE-ready context block instead of calling an LLM", false)
-  .option("--config <path>", "Path to specguard.config.json")
+  .option("--config <path>", "Path to guardian.config.json")
   .action(async (projectRoot, options) => {
     await runGuard({
       projectRoot,
@@ -258,7 +258,7 @@ program
   .requiredOption("--query <text>", "Feature or area to analyze (e.g. 'stripe', 'auth')")
   .option("--backend-root <path>", "Path to backend root")
   .option("--frontend-root <path>", "Path to frontend root")
-  .option("--config <path>", "Path to specguard.config.json")
+  .option("--config <path>", "Path to guardian.config.json")
   .option("--output <path>", "Write report to a file instead of stdout")
   .option("--format <fmt>", "Output format: yaml or json (default: yaml)")
   .option("--ci", "Exit with code 1 when HIGH complexity is detected with strong confidence", false)
@@ -347,7 +347,7 @@ program
 
 program
   .command("init")
-  .description("Initialize specguard for a project (config, .specs dir, pre-commit hook, CLAUDE.md)")
+  .description("Initialize guardian for a project (config, .specs dir, pre-commit hook, CLAUDE.md)")
   .argument("[projectRoot]", "Repo or project root", process.cwd())
   .option("--backend-root <path>", "Path to backend root")
   .option("--frontend-root <path>", "Path to frontend root")

@@ -1,5 +1,5 @@
 /**
- * `specguard doc-html` — generate a self-contained Javadoc-style HTML viewer.
+ * `guardian doc-html` — generate a self-contained Javadoc-style HTML viewer.
  *
  * Same data pipeline as `doc-generate` but outputs a single index.html with:
  *   - Fixed sidebar navigation (collapsible, searchable)
@@ -33,7 +33,7 @@ export async function runDocHtml(options: DocHtmlOptions): Promise<void> {
   const intel = await loadCodebaseIntelligence(intelPath).catch(() => {
     console.log("failed");
     throw new Error(
-      `Could not load ${intelPath}. Run \`specguard intel --specs ${options.specs}\` first.`
+      `Could not load ${intelPath}. Run \`guardian intel --specs ${options.specs}\` first.`
     );
   });
   console.log(

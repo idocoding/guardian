@@ -11,7 +11,7 @@ import type {
   ExportDetail
 } from "./types.js";
 
-const BACKEND_CACHE_VERSION = "specguard-backend-cache-v4";
+const BACKEND_CACHE_VERSION = "guardian-backend-cache-v4";
 
 export type CachedImportUsage = {
   specifier: string;

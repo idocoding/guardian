@@ -79,7 +79,7 @@ export async function runDrift(options: DriftOptions): Promise<void> {
     console.log(`Appended history ${resolvedHistory}`);
   }
 
-  console.log("SpecGuard Drift Report");
+  console.log("Guardian Drift Report");
   console.log(`Status: ${drift.status}`);
   console.log(`D_t: ${drift.D_t.toFixed(4)}`);
   console.log(`K_t: ${drift.K_t.toFixed(4)}`);

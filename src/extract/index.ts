@@ -53,7 +53,7 @@ export async function buildSnapshots(
   const reportedWorkspaceRoot = formatOutputPath(workspaceRoot);
   const config = resolvedProject.config;
 
-  const backend = await analyzeBackend(resolvedBackendRoot, config);
+  const backend = await analyzeBackend(resolvedBackendRoot, config, workspaceRoot);
   const frontend = await analyzeFrontend(resolvedFrontendRoot, config);
   const projectRoot = workspaceRoot;
   const runtime = await analyzeRuntime(workspaceRoot, config);

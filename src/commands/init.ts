@@ -159,7 +159,7 @@ export async function runInit(options: InitOptions): Promise<void> {
     const content = [
       `# ${projectName}`,
       "",
-      "## SpecGuard Architecture Context",
+      "## Guardian Architecture Context",
       "",
       "<!-- guardian:auto-context -->",
       "<!-- This block is auto-updated by guardian. Do not edit manually. -->",
@@ -199,7 +199,7 @@ export async function runInit(options: InitOptions): Promise<void> {
       output: claudeMdPath,
     });
 
-    console.log("\n✓ SpecGuard initialized. Architecture context is in CLAUDE.md and .specs/");
+    console.log("\n✓ Guardian initialized. Architecture context is in CLAUDE.md and .specs/");
     console.log("  Pre-commit hook will keep it fresh on every commit.");
   } catch (err) {
     console.error(`\n  ⚠ Initial extraction failed: ${(err as Error).message}`);
