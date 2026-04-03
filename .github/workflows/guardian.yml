@@ -1,0 +1,28 @@
+name: Guardian CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  architecture-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Guardian
+        run: npm install -g @toolbaux/guardian
+
+      - name: Extract architecture
+        run: guardian extract --output .specs
+
+      - name: Generate AI context
+        run: guardian generate --ai-context --output .specs
+
+      - name: Drift check
+        run: guardian drift
