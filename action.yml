@@ -1,0 +1,97 @@
+name: "SpecGuard AI Context"
+description: "Generate compact architectural memory for AI coding tools from a monorepo or app repo."
+inputs:
+  operation:
+    description: "The SpecGuard CLI command to run ('generate' or 'verify-drift')"
+    required: false
+    default: "generate"
+  project-root:
+    description: "Repo or project root to analyze"
+    required: false
+    default: "."
+  output:
+    description: "Output directory for SpecGuard artifacts"
+    required: false
+    default: "specs-out"
+  focus:
+    description: "Optional feature area to emphasize in the AI context"
+    required: false
+    default: ""
+  config:
+    description: "Optional path to specguard.config.json"
+    required: false
+    default: ""
+  include-extract:
+    description: "Also run full extract before generating AI context"
+    required: false
+    default: "false"
+  commit-changes:
+    description: "Commit generated output back to the current branch"
+    required: false
+    default: "false"
+  commit-message:
+    description: "Commit message when commit-changes is true"
+    required: false
+    default: "chore(specguard): update AI context"
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install SpecGuard dependencies
+      shell: bash
+      run: npm ci --prefix "$GITHUB_ACTION_PATH"
+
+    - name: Generate AI context
+      if: ${{ inputs.operation == 'generate' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        CMD=(npx --prefix "$GITHUB_ACTION_PATH" tsx "$GITHUB_ACTION_PATH/src/cli.ts" generate "${{ inputs.project-root }}" --ai-context --output "${{ inputs.output }}")
+        if [ -n "${{ inputs.focus }}" ]; then
+          CMD+=(--focus "${{ inputs.focus }}")
+        fi
+        if [ -n "${{ inputs.config }}" ]; then
+          CMD+=(--config "${{ inputs.config }}")
+        fi
+        "${CMD[@]}"
+
+    - name: Verify Drift
+      if: ${{ inputs.operation == 'verify-drift' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        CMD=(npx --prefix "$GITHUB_ACTION_PATH" tsx "$GITHUB_ACTION_PATH/src/cli.ts" verify-drift "${{ inputs.project-root }}" --output "${{ inputs.output }}")
+        if [ -n "${{ inputs.config }}" ]; then
+          CMD+=(--config "${{ inputs.config }}")
+        fi
+        "${CMD[@]}"
+
+    - name: Optional full extract
+      if: ${{ inputs.include-extract == 'true' && inputs.operation == 'generate' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        CMD=(npx --prefix "$GITHUB_ACTION_PATH" tsx "$GITHUB_ACTION_PATH/src/cli.ts" extract "${{ inputs.project-root }}" --output "${{ inputs.output }}" --include-file-graph)
+        if [ -n "${{ inputs.config }}" ]; then
+          CMD+=(--config "${{ inputs.config }}")
+        fi
+        "${CMD[@]}"
+
+    - name: Commit generated files
+      if: ${{ inputs.commit-changes == 'true' && inputs.operation == 'generate' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        git config user.name "specguard[bot]"
+        git config user.email "specguard[bot]@users.noreply.github.com"
+        git add "${{ inputs.output }}"
+        if git diff --cached --quiet; then
+          echo "No changes to commit"
+          exit 0
+        fi
+        git commit -m "${{ inputs.commit-message }}"
+        git push

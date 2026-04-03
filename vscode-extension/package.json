@@ -1,0 +1,145 @@
+{
+  "name": "guardian-vscode",
+  "displayName": "Guardian by ToolBaux",
+  "description": "Architectural intelligence inside your editor — by ToolBaux",
+  "version": "0.1.0",
+  "publisher": "toolbaux",
+  "type": "commonjs",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "guardian.generateAiContext",
+        "title": "SpecGuard: Generate AI Context"
+      },
+      {
+        "command": "guardian.driftCheck",
+        "title": "SpecGuard: Drift Check"
+      },
+      {
+        "command": "guardian.generateConstraints",
+        "title": "SpecGuard: Generate Constraints"
+      },
+      {
+        "command": "guardian.copyConstraintsPrompt",
+        "title": "SpecGuard: Copy Constraints Prompt"
+      },
+      {
+        "command": "guardian.simulateDrift",
+        "title": "SpecGuard: Simulate Drift"
+      },
+      {
+        "command": "guardian.guardPatch",
+        "title": "SpecGuard: Guard Patch (Simulate)"
+      },
+      {
+        "command": "guardian.guardedRun",
+        "title": "SpecGuard: Guarded Run"
+      },
+      {
+        "command": "guardian.init",
+        "title": "SpecGuard: Initialize Project"
+      }
+    ],
+    "configuration": {
+      "title": "SpecGuard",
+      "properties": {
+        "guardian.backendRoot": {
+          "type": "string",
+          "default": "backend",
+          "description": "Path to backend root (relative to workspace)."
+        },
+        "guardian.frontendRoot": {
+          "type": "string",
+          "default": "frontend",
+          "description": "Path to frontend root (relative to workspace)."
+        },
+        "guardian.output": {
+          "type": "string",
+          "default": "specs-out/drift.report.json",
+          "description": "Path for drift report output (relative to workspace)."
+        },
+        "guardian.configPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path to guardian.config.json (relative to workspace)."
+        },
+        "guardian.commandPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path to the guardian CLI. Defaults to workspace node_modules/.bin or global."
+        },
+        "guardian.appendHistory": {
+          "type": "boolean",
+          "default": true,
+          "description": "Append a drift history entry on each run."
+        },
+        "guardian.historyPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path for drift history JSONL. If empty, SpecGuard uses its default."
+        },
+        "guardian.writeBaseline": {
+          "type": "boolean",
+          "default": false,
+          "description": "Write a baseline drift file on each run."
+        },
+        "guardian.baselinePath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path for baseline JSON. If empty, SpecGuard uses its default."
+        },
+        "guardian.baselineSummaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path for baseline architecture summary JSON."
+        },
+        "guardian.constraintsOutput": {
+          "type": "string",
+          "default": "specs-out/constraints.json",
+          "description": "Output path for constraints JSON."
+        },
+        "guardian.simulationOutput": {
+          "type": "string",
+          "default": "specs-out/drift.simulation.json",
+          "description": "Output path for drift simulation report."
+        },
+        "guardian.simulationMode": {
+          "type": "string",
+          "default": "soft",
+          "enum": ["soft", "hard"],
+          "description": "Simulation enforcement mode."
+        },
+        "guardian.runOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run drift check on file save."
+        },
+        "guardian.debounceMs": {
+          "type": "number",
+          "default": 750,
+          "description": "Debounce delay for run-on-save (ms)."
+        },
+        "guardian.showOutputOnRun": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show the SpecGuard output channel when a run starts."
+        },
+        "guardian.autoExtract": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically run extract + context injection on file save (debounced 5s)."
+        }
+      }
+    }
+  }
+}

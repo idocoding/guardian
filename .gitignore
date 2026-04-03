@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.log
+.env
+.DS_Store
+coverage/
+out/
+ghost-out/
+specs-out/
+.specs/
+*.tgz
+__pycache__/
+.env
+*.pyc
+*.vsix
