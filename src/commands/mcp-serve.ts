@@ -21,6 +21,7 @@ import readline from "node:readline";
 
 export type McpServeOptions = {
   specs: string;
+  quiet?: boolean;
 };
 
 // ── Types ──
@@ -573,14 +574,17 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
 
 export async function runMcpServe(options: McpServeOptions): Promise<void> {
   const specsDir = path.resolve(options.specs);
+  const quiet = options.quiet ?? false;
   intelPath = path.join(specsDir, "machine", "codebase-intelligence.json");
 
   // Pre-load intelligence
   await loadIntel();
 
   // Log to stderr (stdout is for MCP protocol)
-  process.stderr.write(`Guardian MCP server started. Intelligence: ${intelPath}\n`);
-  process.stderr.write(`Tools: ${TOOLS.map((t) => t.name).join(", ")}\n`);
+  if (!quiet) {
+    process.stderr.write(`Guardian MCP server started. Intelligence: ${intelPath}\n`);
+    process.stderr.write(`Tools: ${TOOLS.map((t) => t.name).join(", ")}\n`);
+  }
 
   // Read JSON-RPC messages from stdin, line by line
   const rl = readline.createInterface({ input: process.stdin });
@@ -604,9 +608,9 @@ export async function runMcpServe(options: McpServeOptions): Promise<void> {
         session_end: new Date().toISOString(),
       });
       await fs.appendFile(metricsPath, entry + "\n", "utf8");
-      process.stderr.write(`Guardian metrics saved to ${metricsPath}\n`);
+      if (!quiet) process.stderr.write(`Guardian metrics saved to ${metricsPath}\n`);
     } catch {}
-    process.stderr.write("Guardian MCP server stopped.\n");
+    if (!quiet) process.stderr.write("Guardian MCP server stopped.\n");
     process.exit(0);
   });
 }

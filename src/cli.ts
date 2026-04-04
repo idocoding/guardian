@@ -368,9 +368,11 @@ program
   .command("mcp-serve")
   .description("Start Guardian MCP server for Claude Code / Cursor integration")
   .option("--specs <dir>", "Specs directory", ".specs")
+  .option("--quiet", "Suppress stderr output (for clients that merge streams)", false)
   .action(async (options) => {
     await runMcpServe({
       specs: options.specs,
+      quiet: options.quiet,
     });
   });
 
