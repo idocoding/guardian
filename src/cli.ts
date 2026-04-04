@@ -19,6 +19,7 @@ import { runDocGenerate } from "./commands/doc-generate.js";
 import { runDiscrepancy } from "./commands/discrepancy.js";
 import { runDocHtml } from "./commands/doc-html.js";
 import { runInit } from "./commands/init.js";
+import { runMcpServe } from "./commands/mcp-serve.js";
 import { DEFAULT_SPECS_DIR } from "./config.js";
 
 const program = new Command();
@@ -360,6 +361,16 @@ program
       frontendRoot: options.frontendRoot,
       output: options.output,
       skipHook: options.skipHook ?? false,
+    });
+  });
+
+program
+  .command("mcp-serve")
+  .description("Start Guardian MCP server for Claude Code / Cursor integration")
+  .option("--specs <dir>", "Specs directory", ".specs")
+  .action(async (options) => {
+    await runMcpServe({
+      specs: options.specs,
     });
   });
 
