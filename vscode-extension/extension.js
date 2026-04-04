@@ -342,7 +342,7 @@ function activate(context) {
     }
   }
 
-  // ── Auto-Init: set up project on first activation ──────────────────────────
+  // ── Auto-Init + MCP Setup ──────────────────────────────────────────────────
   {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (workspaceFolder) {
@@ -350,25 +350,76 @@ function activate(context) {
       const specsExists = fs.existsSync(path.join(root, ".specs", "machine", "codebase-intelligence.json"));
 
       if (!specsExists) {
-        // First time — run guardian init automatically
         const commandPath = resolveCommandPath("", root);
         output.appendLine("[Guardian] No .specs/ found — running auto-init...");
 
         runSpecguard(commandPath, ["init", root], root, false, output).then((code) => {
           if (code === 0) {
-            output.appendLine("[Guardian] Auto-init complete. Project is set up.");
+            output.appendLine("[Guardian] Auto-init complete.");
             vscode.window.showInformationMessage("Guardian: Project initialized! Architecture context will auto-update on save.");
-            // Load fresh status
             const intelPath = path.join(root, ".specs", "machine", "codebase-intelligence.json");
             const intel = readJsonSafe(intelPath);
             if (intel) {
               updateStatusBar("stable", intel.meta?.counts?.endpoints, intel.meta?.counts?.pages);
             }
+            // Set up MCP after init
+            configureMcp(root, output);
           } else {
             output.appendLine("[Guardian] Auto-init failed. Run 'guardian init' manually.");
           }
         });
+      } else {
+        // Specs exist — just ensure MCP is configured
+        configureMcp(root, output);
       }
+    }
+  }
+
+  function configureMcp(root, output) {
+    const commandPath = resolveCommandPath("", root);
+
+    // Claude Code: .claude/settings.json (project-level)
+    const claudeDir = path.join(root, ".claude");
+    const claudeSettings = path.join(claudeDir, "settings.json");
+    try {
+      if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true });
+      let settings = {};
+      if (fs.existsSync(claudeSettings)) {
+        settings = JSON.parse(fs.readFileSync(claudeSettings, "utf8"));
+      }
+      if (!settings.mcpServers) settings.mcpServers = {};
+      if (!settings.mcpServers.guardian) {
+        settings.mcpServers.guardian = {
+          command: commandPath,
+          args: ["mcp-serve", "--specs", path.join(root, ".specs")]
+        };
+        fs.writeFileSync(claudeSettings, JSON.stringify(settings, null, 2) + "\n", "utf8");
+        output.appendLine("[Guardian] MCP configured for Claude Code (.claude/settings.json)");
+      }
+    } catch (err) {
+      output.appendLine("[Guardian] Could not configure Claude Code MCP: " + err.message);
+    }
+
+    // Cursor: .cursor/mcp.json
+    const cursorDir = path.join(root, ".cursor");
+    const cursorMcp = path.join(cursorDir, "mcp.json");
+    try {
+      if (!fs.existsSync(cursorDir)) fs.mkdirSync(cursorDir, { recursive: true });
+      let mcpConfig = {};
+      if (fs.existsSync(cursorMcp)) {
+        mcpConfig = JSON.parse(fs.readFileSync(cursorMcp, "utf8"));
+      }
+      if (!mcpConfig.mcpServers) mcpConfig.mcpServers = {};
+      if (!mcpConfig.mcpServers.guardian) {
+        mcpConfig.mcpServers.guardian = {
+          command: commandPath,
+          args: ["mcp-serve", "--specs", path.join(root, ".specs")]
+        };
+        fs.writeFileSync(cursorMcp, JSON.stringify(mcpConfig, null, 2) + "\n", "utf8");
+        output.appendLine("[Guardian] MCP configured for Cursor (.cursor/mcp.json)");
+      }
+    } catch (err) {
+      output.appendLine("[Guardian] Could not configure Cursor MCP: " + err.message);
     }
   }
 
