@@ -13,3 +13,13 @@ __pycache__/
 .env
 *.pyc
 *.vsix
+.claude/
+.claude-*/
+.idea/
+.vscode/
+*.sln
+*.suo
+*.user
+.cursor/
+.mcp.json
+CLAUDE.md

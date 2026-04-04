@@ -334,20 +334,65 @@ async function search(args: { query: string }): Promise<string> {
   const d = await loadIntel();
   const q = args.query.toLowerCase();
 
+  // Endpoints: match path, handler, or service calls
   const eps = Object.values(d.api_registry || {}).filter((ep: any) =>
     ep.path?.toLowerCase().includes(q) || ep.handler?.toLowerCase().includes(q) ||
     ep.service_calls?.some((s: string) => s.toLowerCase().includes(q))
   ).slice(0, 8).map((ep: any) => `${(ep as any).method} ${(ep as any).path} [${(ep as any).module}]`);
 
+  // Models: match name or fields
   const models = Object.values(d.model_registry || {}).filter((m: any) =>
     m.name?.toLowerCase().includes(q) || m.fields?.some((f: string) => f.toLowerCase().includes(q))
   ).slice(0, 8).map((m: any) => `${(m as any).name}:${(m as any).fields?.length}f`);
 
+  // Modules: match id, imports, or exports
   const mods = (d.service_map || []).filter((m: any) =>
-    m.id?.toLowerCase().includes(q)
-  ).slice(0, 5).map((m: any) => `${m.id}:${m.endpoint_count}ep`);
+    m.id?.toLowerCase().includes(q) ||
+    m.imports?.some((i: string) => i.toLowerCase().includes(q))
+  ).slice(0, 5).map((m: any) => `${m.id}:${m.file_count}files,${m.endpoint_count}ep [${m.layer}]`);
 
-  return compact({ ep: eps, mod: models, m: mods });
+  // Exports: match exported symbol names across all modules
+  const exports: string[] = [];
+  for (const m of d.service_map || []) {
+    for (const sym of m.exports || []) {
+      if (sym.toLowerCase().includes(q)) {
+        exports.push(`${sym} [${m.id}]`);
+      }
+    }
+  }
+
+  // Files: match file paths across all modules
+  const files: string[] = [];
+  for (const m of d.service_map || []) {
+    for (const f of m.files || []) {
+      if (f.toLowerCase().includes(q)) {
+        files.push(`${f} [${m.id}]`);
+      }
+    }
+  }
+
+  // Enums: match name or values
+  const enums = Object.values(d.enum_registry || {}).filter((e: any) =>
+    e.name?.toLowerCase().includes(q) || e.values?.some((v: string) => v.toLowerCase().includes(q))
+  ).slice(0, 5).map((e: any) => `${e.name}:${e.values?.length}vals [${e.file}]`);
+
+  // Background tasks: match name or kind
+  const tasks = (d.background_tasks || []).filter((t: any) =>
+    t.name?.toLowerCase().includes(q) || t.kind?.toLowerCase().includes(q)
+  ).slice(0, 5).map((t: any) => `${t.name} [${t.kind}] ${t.file}`);
+
+  // Frontend pages: match path or component
+  const pages = (d.frontend_pages || []).filter((p: any) =>
+    p.path?.toLowerCase().includes(q) || p.component?.toLowerCase().includes(q) ||
+    p.api_calls?.some((c: string) => c.toLowerCase().includes(q))
+  ).slice(0, 5).map((p: any) => `${p.path} → ${p.component}`);
+
+  return compact({
+    ep: eps, mod: models, m: mods,
+    exports: exports.slice(0, 10),
+    files: files.slice(0, 8),
+    enums, tasks, pages,
+  });
 }
 
 async function model(args: { name: string }): Promise<string> {
@@ -398,7 +443,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "guardian_search",
-    description: "Find endpoints, models, modules by keyword. Returns compact one-line results.",
+    description: "Find endpoints, models, modules, exported symbols, files, enums, tasks, and pages by keyword. Returns compact one-line results.",
     inputSchema: {
       type: "object",
       properties: {

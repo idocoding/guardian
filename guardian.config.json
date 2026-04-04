@@ -1,0 +1,9 @@
+{
+  "project": {
+    "backendRoot": "./src",
+    "frontendRoot": ""
+  },
+  "docs": {
+    "mode": "full"
+  }
+}

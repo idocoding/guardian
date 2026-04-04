@@ -6,7 +6,8 @@
  *   2. .specs/ directory
  *   3. Pre-commit hook that auto-runs extract + context injection
  *   4. Injects guardian context block into CLAUDE.md
- *   5. Adds .specs/ to .gitignore exclusion (tracked by default)
+ *   5. Claude Code hooks (.claude/settings.json + MCP-first enforcement)
+ *   6. Adds .specs/ to .gitignore exclusion (tracked by default)
  *
  * Safe to run multiple times — only creates what's missing.
  */
@@ -32,6 +33,27 @@ const DEFAULT_CONFIG = {
     mode: "full",
   },
 };
+
+const CLAUDE_CODE_HOOK_SCRIPT = `#!/bin/bash
+# Guardian MCP-first hook — ensures AI tools use Guardian MCP before reading source files.
+# Installed by: guardian init
+
+INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+
+cat >&2 <<BLOCK
+BLOCKED: Use Guardian MCP tools before reading source files.
+
+Use these MCP tools first:
+  - guardian_orient  — get codebase overview
+  - guardian_search  — find features by keyword
+  - guardian_context — deep dive into a specific area
+
+Then you can read individual files as needed.
+BLOCK
+
+exit 2
+`;
 
 const HOOK_SCRIPT = `#!/bin/sh
 # guardian pre-commit hook — keeps architecture context fresh
@@ -171,7 +193,10 @@ export async function runInit(options: InitOptions): Promise<void> {
     console.log("  ✓ Created CLAUDE.md with guardian context block");
   }
 
-  // 5. Run initial extract + context injection
+  // 5. Set up Claude Code hooks (.claude/settings.json + hook script)
+  await setupClaudeCodeHooks(root, specsDir);
+
+  // 6. Run initial extract + context injection
   console.log("\n  Running initial extraction...");
   try {
     const { runExtract } = await import("./extract.js");
@@ -223,4 +248,66 @@ async function dirExists(p: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function setupClaudeCodeHooks(root: string, specsDir: string): Promise<void> {
+  const claudeDir = path.join(root, ".claude");
+  const hooksDir = path.join(claudeDir, "hooks");
+  const settingsPath = path.join(claudeDir, "settings.json");
+  const hookScriptPath = path.join(hooksDir, "mcp-first.sh");
+
+  await fs.mkdir(hooksDir, { recursive: true });
+
+  // Write the hook script
+  if (!(await fileExists(hookScriptPath))) {
+    await fs.writeFile(hookScriptPath, CLAUDE_CODE_HOOK_SCRIPT, "utf8");
+    await fs.chmod(hookScriptPath, 0o755);
+    console.log("  ✓ Created Claude Code MCP-first hook (.claude/hooks/mcp-first.sh)");
+  } else {
+    console.log("  · Claude Code hook already exists");
+  }
+
+  // Write or merge .claude/settings.json
+  let settings: Record<string, unknown> = {};
+  if (await fileExists(settingsPath)) {
+    try {
+      settings = JSON.parse(await fs.readFile(settingsPath, "utf8"));
+    } catch {
+      // Corrupted file — overwrite
+    }
+  }
+
+  // Add MCP server config
+  if (!settings.mcpServers) settings.mcpServers = {};
+  const mcpServers = settings.mcpServers as Record<string, unknown>;
+  if (!mcpServers.guardian) {
+    mcpServers.guardian = {
+      command: "guardian",
+      args: ["mcp-serve", "--specs", specsDir],
+    };
+  }
+
+  // Add PreToolUse hook
+  const hookEntry = {
+    matcher: "Read|Glob|Grep",
+    hooks: [
+      {
+        type: "command",
+        if: "Read(//*/src/*)|Glob(*src*)|Grep(*src*)",
+        command: '"$CLAUDE_PROJECT_DIR"/.claude/hooks/mcp-first.sh',
+      },
+    ],
+  };
+
+  if (!settings.hooks) settings.hooks = {};
+  const hooks = settings.hooks as Record<string, unknown>;
+  if (!hooks.PreToolUse) {
+    hooks.PreToolUse = [hookEntry];
+    console.log("  ✓ Configured Claude Code PreToolUse hook in .claude/settings.json");
+  } else {
+    console.log("  · Claude Code PreToolUse hook already configured");
+  }
+
+  await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
+  console.log("  ✓ Updated .claude/settings.json (MCP server + hooks)");
 }

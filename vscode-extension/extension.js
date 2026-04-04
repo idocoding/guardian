@@ -377,6 +377,7 @@ function activate(context) {
 
   function configureMcp(root, output) {
     const commandPath = resolveCommandPath("", root);
+    const specsDir = path.join(root, ".specs");
 
     // Claude Code + Cursor: .mcp.json at project root (MCP standard)
     const mcpJsonPath = path.join(root, ".mcp.json");
@@ -389,13 +390,102 @@ function activate(context) {
       if (!mcpConfig.mcpServers.guardian) {
         mcpConfig.mcpServers.guardian = {
           command: commandPath,
-          args: ["mcp-serve", "--specs", path.join(root, ".specs")]
+          args: ["mcp-serve", "--specs", specsDir]
         };
         fs.writeFileSync(mcpJsonPath, JSON.stringify(mcpConfig, null, 2) + "\n", "utf8");
         output.appendLine("[Guardian] MCP configured (.mcp.json)");
       }
     } catch (err) {
       output.appendLine("[Guardian] Could not configure MCP: " + err.message);
+    }
+
+    // Claude Code: .claude/settings.json with MCP server + PreToolUse hook
+    configureClaudeCodeHooks(root, commandPath, specsDir, output);
+  }
+
+  function configureClaudeCodeHooks(root, commandPath, specsDir, output) {
+    const claudeDir = path.join(root, ".claude");
+    const hooksDir = path.join(claudeDir, "hooks");
+    const settingsPath = path.join(claudeDir, "settings.json");
+    const hookScriptPath = path.join(hooksDir, "mcp-first.sh");
+
+    try {
+      fs.mkdirSync(hooksDir, { recursive: true });
+
+      // Write the hook script
+      if (!fs.existsSync(hookScriptPath)) {
+        const hookScript = [
+          "#!/bin/bash",
+          "# Guardian MCP-first hook — ensures AI tools use Guardian MCP before reading source files.",
+          "# Installed by: Guardian VS Code extension",
+          "",
+          "INPUT=$(cat)",
+          'TOOL_NAME=$(echo "$INPUT" | jq -r \'.tool_name // empty\')',
+          "",
+          "cat >&2 <<BLOCK",
+          "BLOCKED: Use Guardian MCP tools before reading source files.",
+          "",
+          "Use these MCP tools first:",
+          "  - guardian_orient  — get codebase overview",
+          "  - guardian_search  — find features by keyword",
+          "  - guardian_context — deep dive into a specific area",
+          "",
+          "Then you can read individual files as needed.",
+          "BLOCK",
+          "",
+          "exit 2",
+          ""
+        ].join("\n");
+        fs.writeFileSync(hookScriptPath, hookScript, { mode: 0o755 });
+        output.appendLine("[Guardian] Created Claude Code MCP-first hook");
+      }
+
+      // Write or merge .claude/settings.json
+      let settings = {};
+      if (fs.existsSync(settingsPath)) {
+        try {
+          settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+        } catch {
+          // Corrupted — overwrite
+        }
+      }
+
+      let changed = false;
+
+      // Add MCP server config
+      if (!settings.mcpServers) settings.mcpServers = {};
+      if (!settings.mcpServers.guardian) {
+        settings.mcpServers.guardian = {
+          command: commandPath,
+          args: ["mcp-serve", "--specs", specsDir]
+        };
+        changed = true;
+      }
+
+      // Add PreToolUse hook
+      if (!settings.hooks) settings.hooks = {};
+      if (!settings.hooks.PreToolUse) {
+        settings.hooks.PreToolUse = [
+          {
+            matcher: "Read|Glob|Grep",
+            hooks: [
+              {
+                type: "command",
+                if: "Read(//*/src/*)|Glob(*src*)|Grep(*src*)",
+                command: '"$CLAUDE_PROJECT_DIR"/.claude/hooks/mcp-first.sh'
+              }
+            ]
+          }
+        ];
+        changed = true;
+      }
+
+      if (changed) {
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
+        output.appendLine("[Guardian] Configured Claude Code hooks (.claude/settings.json)");
+      }
+    } catch (err) {
+      output.appendLine("[Guardian] Could not configure Claude Code hooks: " + err.message);
     }
   }
 

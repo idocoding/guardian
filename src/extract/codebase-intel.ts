@@ -68,6 +68,8 @@ export type ServiceMapEntry = {
   file_count: number;
   endpoint_count: number;
   imports: string[];
+  exports: string[];
+  files: string[];
 };
 
 export type FrontendPageEntry = {
@@ -157,16 +159,23 @@ export function buildCodebaseIntelligence(
     };
   }
 
-  // service_map
-  const serviceMap: ServiceMapEntry[] = architecture.modules.map((m) => ({
-    id: m.id,
-    path: m.path,
-    type: m.type,
-    layer: m.layer,
-    file_count: m.files.length,
-    endpoint_count: m.endpoints.length,
-    imports: m.imports,
-  }));
+  // service_map (with exports and files for search)
+  const serviceMap: ServiceMapEntry[] = architecture.modules.map((m) => {
+    const allExports = (m.exports || []).flatMap((e: any) =>
+      (e.exports || []).map((x: any) => x.name)
+    );
+    return {
+      id: m.id,
+      path: m.path,
+      type: m.type,
+      layer: m.layer,
+      file_count: m.files.length,
+      endpoint_count: m.endpoints.length,
+      imports: m.imports,
+      exports: [...new Set(allExports)],
+      files: m.files,
+    };
+  });
 
   // frontend_pages
   const frontendPages: FrontendPageEntry[] = ux.pages.map((p) => ({
