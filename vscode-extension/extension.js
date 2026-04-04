@@ -342,6 +342,36 @@ function activate(context) {
     }
   }
 
+  // ── Auto-Init: set up project on first activation ──────────────────────────
+  {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (workspaceFolder) {
+      const root = workspaceFolder.uri.fsPath;
+      const specsExists = fs.existsSync(path.join(root, ".specs", "machine", "codebase-intelligence.json"));
+
+      if (!specsExists) {
+        // First time — run guardian init automatically
+        const commandPath = resolveCommandPath("", root);
+        output.appendLine("[Guardian] No .specs/ found — running auto-init...");
+
+        runSpecguard(commandPath, ["init", root], root, false, output).then((code) => {
+          if (code === 0) {
+            output.appendLine("[Guardian] Auto-init complete. Project is set up.");
+            vscode.window.showInformationMessage("Guardian: Project initialized! Architecture context will auto-update on save.");
+            // Load fresh status
+            const intelPath = path.join(root, ".specs", "machine", "codebase-intelligence.json");
+            const intel = readJsonSafe(intelPath);
+            if (intel) {
+              updateStatusBar("stable", intel.meta?.counts?.endpoints, intel.meta?.counts?.pages);
+            }
+          } else {
+            output.appendLine("[Guardian] Auto-init failed. Run 'guardian init' manually.");
+          }
+        });
+      }
+    }
+  }
+
   // ── Background Extract on Save ────────────────────────────────────────────
   let extractTimer = null;
   const CODE_EXTENSIONS = new Set([".py", ".ts", ".tsx", ".js", ".jsx", ".vue", ".go", ".java", ".cs"]);
