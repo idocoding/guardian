@@ -149,31 +149,106 @@ function compact(obj: any): string {
   return JSON.stringify(obj);
 }
 
+function normalize(p: string): string {
+  return p.replace(/^\.\//, "").replace(/\/\//g, "/");
+}
+
 function findModule(data: any, file: string) {
-  return data.service_map?.find((m: any) => m.path && file.replace(/^\.\//, "").startsWith(m.path.replace(/^\.\//, "")));
+  const f = normalize(file);
+  return data.service_map?.find((m: any) => {
+    const mp = normalize(m.path || "");
+    return mp && (f.startsWith(mp + "/") || f === mp);
+  }) || data.service_map?.find((m: any) => {
+    // Fallback: match by module ID (handles doubled paths)
+    const mid = normalize(m.id || "");
+    return mid && f.includes(mid);
+  });
 }
 
 function findEndpointsInFile(data: any, file: string) {
-  const f = file.replace(/^\.\//, "");
-  return Object.values(data.api_registry || {}).filter((ep: any) => ep.file && f.includes(ep.file.replace(/^\.\//, "")));
+  const f = normalize(file);
+  const basename = path.basename(f);
+  return Object.values(data.api_registry || {}).filter((ep: any) => {
+    const ef = normalize(ep.file || "");
+    return ef && (f.includes(ef) || ef.includes(f) || ef.endsWith(basename));
+  });
 }
 
 function findModelsInFile(data: any, file: string) {
-  const f = file.replace(/^\.\//, "");
-  return Object.values(data.model_registry || {}).filter((m: any) => m.file && f.includes(m.file.replace(/^\.\//, "")));
+  const f = normalize(file);
+  const basename = path.basename(f);
+  return Object.values(data.model_registry || {}).filter((m: any) => {
+    const mf = normalize(m.file || "");
+    return mf && (f.includes(mf) || mf.includes(f) || mf.endsWith(basename));
+  });
 }
 
 // ── Tool implementations (compact JSON, no redundancy) ──
 
 async function orient(): Promise<string> {
+  // Read architecture-context.md first — it has the richest summary
+  const contextPath = path.join(path.dirname(intelPath), "architecture-context.md");
+  try {
+    const raw = await fs.readFile(contextPath, "utf8");
+    // Extract the content between guardian:context markers
+    const match = raw.match(/<!-- guardian:context[^>]*-->([\s\S]*?)<!-- \/guardian:context -->/);
+    if (match) {
+      // Parse the markdown into compact structured data
+      const content = match[1];
+      const lines = content.split("\n").map((l: string) => l.trim()).filter(Boolean);
+
+      // Extract key sections
+      const desc = raw.match(/Description: (.+)/)?.[1] || "";
+      const codeMap = lines.find((l: string) => l.startsWith("**Backend:**")) || "";
+
+      // Module map with exports
+      const moduleLines = lines.filter((l: string) => l.startsWith("- **backend/") || l.startsWith("- **frontend/"));
+      const modules = moduleLines.map((l: string) => {
+        const m = l.match(/\*\*([^*]+)\*\*\s*\(([^)]+)\)\s*[—–-]\s*(.*)/);
+        return m ? [m[1], m[2], m[3].slice(0, 60)] : null;
+      }).filter(Boolean);
+
+      // Dependencies
+      const deps = lines.filter((l: string) => l.includes("→")).map((l: string) => l.replace(/^- /, ""));
+
+      // High-coupling files
+      const coupling = lines.filter((l: string) => l.match(/score \d/)).map((l: string) => l.replace(/^- /, ""));
+
+      // Structural intelligence
+      const si = lines.filter((l: string) => l.includes("depth=")).map((l: string) => l.replace(/^- /, ""));
+
+      // Model-endpoint map
+      const modelEp = lines.filter((l: string) => l.includes("endpoints) ->")).map((l: string) => l.replace(/^- /, ""));
+
+      return compact({
+        desc: desc.slice(0, 120),
+        map: codeMap,
+        modules,
+        deps,
+        coupling: coupling.slice(0, 5),
+        si: si.slice(0, 5),
+        modelEp,
+      });
+    }
+  } catch {}
+
+  // Fallback: build from codebase-intelligence.json
   const d = await loadIntel();
   const c = d.meta?.counts || {};
+  // Compute endpoint counts from api_registry (service_map counts are often 0)
+  const epByMod: Record<string, number> = {};
+  for (const ep of Object.values(d.api_registry || {}) as any[]) {
+    epByMod[ep.module] = (epByMod[ep.module] || 0) + 1;
+  }
   const mods = (d.service_map || []).filter((m: any) => m.file_count > 0);
-  const topMods = mods.sort((a: any, b: any) => (b.endpoint_count || 0) - (a.endpoint_count || 0)).slice(0, 6);
+  const topMods = mods
+    .map((m: any) => ({ ...m, ep_count: epByMod[m.id] || 0 }))
+    .sort((a: any, b: any) => b.ep_count - a.ep_count)
+    .slice(0, 6);
   return compact({
     p: d.meta?.project,
     ep: c.endpoints, mod: c.models, pg: c.pages, m: c.modules,
-    top: topMods.map((m: any) => [m.id, m.endpoint_count, m.layer]),
+    top: topMods.map((m: any) => [m.id, m.ep_count, m.layer]),
     pages: (d.frontend_pages || []).map((p: any) => p.path),
   });
 }
