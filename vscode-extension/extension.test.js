@@ -190,13 +190,13 @@ test("falls back to workspace root for relative path", () => {
 
 console.log("\n=== MCP Configuration ===");
 
-test("configureMcp creates .claude/settings.json with MCP server", () => {
+test("configureMcp creates .claude/.mcp.json with MCP server", () => {
   const dir = tmpDir();
 
   // Simulate configureMcp logic
   const claudeDir = path.join(dir, ".claude");
   fs.mkdirSync(claudeDir, { recursive: true });
-  const claudeSettings = path.join(claudeDir, "settings.json");
+  const claudeSettings = path.join(claudeDir, ".mcp.json");
   const settings = { mcpServers: { guardian: { command: "guardian", args: ["mcp-serve", "--specs", path.join(dir, ".specs")] } } };
   fs.writeFileSync(claudeSettings, JSON.stringify(settings, null, 2));
 
@@ -227,7 +227,7 @@ test("configureMcp does not overwrite existing MCP config", () => {
   const dir = tmpDir();
   const claudeDir = path.join(dir, ".claude");
   fs.mkdirSync(claudeDir, { recursive: true });
-  const claudeSettings = path.join(claudeDir, "settings.json");
+  const claudeSettings = path.join(claudeDir, ".mcp.json");
 
   // Write existing config with guardian already set
   const existing = {
@@ -245,11 +245,11 @@ test("configureMcp does not overwrite existing MCP config", () => {
   fs.rmSync(dir, { recursive: true });
 });
 
-test("configureMcp preserves other settings in claude settings.json", () => {
+test("configureMcp preserves other settings in claude .mcp.json", () => {
   const dir = tmpDir();
   const claudeDir = path.join(dir, ".claude");
   fs.mkdirSync(claudeDir, { recursive: true });
-  const claudeSettings = path.join(claudeDir, "settings.json");
+  const claudeSettings = path.join(claudeDir, ".mcp.json");
 
   const existing = { permissions: { allow: ["Bash(ls)"] } };
   fs.writeFileSync(claudeSettings, JSON.stringify(existing));

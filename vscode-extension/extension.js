@@ -378,36 +378,12 @@ function activate(context) {
   function configureMcp(root, output) {
     const commandPath = resolveCommandPath("", root);
 
-    // Claude Code: .claude/settings.json (project-level)
-    const claudeDir = path.join(root, ".claude");
-    const claudeSettings = path.join(claudeDir, "settings.json");
+    // Claude Code + Cursor: .mcp.json at project root (MCP standard)
+    const mcpJsonPath = path.join(root, ".mcp.json");
     try {
-      if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true });
-      let settings = {};
-      if (fs.existsSync(claudeSettings)) {
-        settings = JSON.parse(fs.readFileSync(claudeSettings, "utf8"));
-      }
-      if (!settings.mcpServers) settings.mcpServers = {};
-      if (!settings.mcpServers.guardian) {
-        settings.mcpServers.guardian = {
-          command: commandPath,
-          args: ["mcp-serve", "--specs", path.join(root, ".specs")]
-        };
-        fs.writeFileSync(claudeSettings, JSON.stringify(settings, null, 2) + "\n", "utf8");
-        output.appendLine("[Guardian] MCP configured for Claude Code (.claude/settings.json)");
-      }
-    } catch (err) {
-      output.appendLine("[Guardian] Could not configure Claude Code MCP: " + err.message);
-    }
-
-    // Cursor: .cursor/mcp.json
-    const cursorDir = path.join(root, ".cursor");
-    const cursorMcp = path.join(cursorDir, "mcp.json");
-    try {
-      if (!fs.existsSync(cursorDir)) fs.mkdirSync(cursorDir, { recursive: true });
       let mcpConfig = {};
-      if (fs.existsSync(cursorMcp)) {
-        mcpConfig = JSON.parse(fs.readFileSync(cursorMcp, "utf8"));
+      if (fs.existsSync(mcpJsonPath)) {
+        mcpConfig = JSON.parse(fs.readFileSync(mcpJsonPath, "utf8"));
       }
       if (!mcpConfig.mcpServers) mcpConfig.mcpServers = {};
       if (!mcpConfig.mcpServers.guardian) {
@@ -415,11 +391,11 @@ function activate(context) {
           command: commandPath,
           args: ["mcp-serve", "--specs", path.join(root, ".specs")]
         };
-        fs.writeFileSync(cursorMcp, JSON.stringify(mcpConfig, null, 2) + "\n", "utf8");
-        output.appendLine("[Guardian] MCP configured for Cursor (.cursor/mcp.json)");
+        fs.writeFileSync(mcpJsonPath, JSON.stringify(mcpConfig, null, 2) + "\n", "utf8");
+        output.appendLine("[Guardian] MCP configured (.mcp.json)");
       }
     } catch (err) {
-      output.appendLine("[Guardian] Could not configure Cursor MCP: " + err.message);
+      output.appendLine("[Guardian] Could not configure MCP: " + err.message);
     }
   }
 
