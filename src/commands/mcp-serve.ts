@@ -42,6 +42,81 @@ type Tool = {
   };
 };
 
+// ── Metrics tracking ──
+
+type ToolCallMetric = {
+  tool: string;
+  args: Record<string, string>;
+  timestamp: number;
+  response_chars: number;
+  estimated_tokens: number;
+  cache_hit: boolean;
+};
+
+const metrics = {
+  session_start: Date.now(),
+  calls: [] as ToolCallMetric[],
+  intel_reloads: 0,
+  cache_hits: 0,
+
+  record(tool: string, args: Record<string, string>, responseText: string, cacheHit: boolean) {
+    const chars = responseText.length;
+    const estimatedTokens = Math.ceil(chars / 3.5); // rough token estimate
+    this.calls.push({
+      tool,
+      args,
+      timestamp: Date.now(),
+      response_chars: chars,
+      estimated_tokens: estimatedTokens,
+      cache_hit: cacheHit,
+    });
+    if (cacheHit) this.cache_hits++;
+  },
+
+  summary() {
+    const duration = Math.round((Date.now() - this.session_start) / 1000);
+    const totalCalls = this.calls.length;
+    const totalTokensSpent = this.calls.reduce((s, c) => s + c.estimated_tokens, 0);
+    // Estimate tokens saved: each guardian call replaces ~3 Read/Grep calls (~400 tokens each)
+    const estimatedTokensSaved = totalCalls * 400 - totalTokensSpent;
+    const toolBreakdown: Record<string, { calls: number; tokens: number }> = {};
+    for (const c of this.calls) {
+      if (!toolBreakdown[c.tool]) toolBreakdown[c.tool] = { calls: 0, tokens: 0 };
+      toolBreakdown[c.tool].calls++;
+      toolBreakdown[c.tool].tokens += c.estimated_tokens;
+    }
+
+    return {
+      session_duration_seconds: duration,
+      total_mcp_calls: totalCalls,
+      total_tokens_spent: totalTokensSpent,
+      estimated_tokens_saved: Math.max(0, estimatedTokensSaved),
+      savings_ratio: totalCalls > 0
+        ? `${Math.round((estimatedTokensSaved / (totalCalls * 400)) * 100)}%`
+        : "n/a",
+      cache_hits: this.cache_hits,
+      intel_reloads: this.intel_reloads,
+      tool_breakdown: toolBreakdown,
+      avg_tokens_per_call: totalCalls > 0 ? Math.round(totalTokensSpent / totalCalls) : 0,
+    };
+  },
+};
+
+// ── Response cache (dedup repeated queries) ──
+
+const responseCache = new Map<string, { text: string; time: number }>();
+const CACHE_TTL = 30_000; // 30s cache
+
+function getCached(key: string): string | null {
+  const entry = responseCache.get(key);
+  if (entry && Date.now() - entry.time < CACHE_TTL) return entry.text;
+  return null;
+}
+
+function setCache(key: string, text: string): void {
+  responseCache.set(key, { text, time: Date.now() });
+}
+
 // ── Intelligence loader ──
 
 let intel: any = null;
@@ -317,6 +392,14 @@ const TOOLS: Tool[] = [
       properties: {},
     },
   },
+  {
+    name: "guardian_metrics",
+    description: "Get MCP usage metrics for this session: calls made, tokens spent, tokens saved, cache hits. Call at end of session to evaluate guardian's usefulness.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
 ];
 
 const TOOL_HANDLERS: Record<string, (args: any) => Promise<string>> = {
@@ -325,6 +408,7 @@ const TOOL_HANDLERS: Record<string, (args: any) => Promise<string>> = {
   guardian_endpoint_trace: endpointTrace,
   guardian_impact_check: impactCheck,
   guardian_overview: overview,
+  guardian_metrics: async () => JSON.stringify(metrics.summary(), null, 2),
 };
 
 function respond(id: number | string | null, result: any): void {
@@ -369,7 +453,18 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
       }
 
       try {
+        // Check cache first
+        const cacheKey = `${toolName}:${JSON.stringify(toolArgs)}`;
+        const cached = getCached(cacheKey);
+        if (cached) {
+          metrics.record(toolName, toolArgs, cached, true);
+          respond(req.id, { content: [{ type: "text", text: cached }] });
+          break;
+        }
+
         const result = await handler(toolArgs);
+        setCache(cacheKey, result);
+        metrics.record(toolName, toolArgs, result, false);
         respond(req.id, {
           content: [{ type: "text", text: result }],
         });
@@ -413,7 +508,17 @@ export async function runMcpServe(options: McpServeOptions): Promise<void> {
     }
   });
 
-  rl.on("close", () => {
+  rl.on("close", async () => {
+    // Persist session metrics to .specs/machine/mcp-metrics.jsonl
+    const metricsPath = path.join(specsDir, "machine", "mcp-metrics.jsonl");
+    try {
+      const entry = JSON.stringify({
+        ...metrics.summary(),
+        session_end: new Date().toISOString(),
+      });
+      await fs.appendFile(metricsPath, entry + "\n", "utf8");
+      process.stderr.write(`Guardian metrics saved to ${metricsPath}\n`);
+    } catch {}
     process.stderr.write("Guardian MCP server stopped.\n");
     process.exit(0);
   });
