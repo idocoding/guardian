@@ -79,6 +79,58 @@ Guardian auto-injects architecture context into `CLAUDE.md` so your AI tool read
 
 The block between markers is replaced on every save (VSCode extension) and every commit (pre-commit hook). Your manual content outside the markers is never touched.
 
+## MCP Server — AI Tools Connect Directly
+
+Guardian includes an MCP server that Claude Code and Cursor connect to automatically. The VSCode extension sets this up on first activation — no manual config needed.
+
+**6 compact tools available to AI:**
+
+| Tool | Tokens | Purpose |
+|------|--------|---------|
+| `guardian_orient` | ~100 | Project summary at session start |
+| `guardian_context` | ~50-80 | File or endpoint dependencies before editing |
+| `guardian_impact` | ~30 | What breaks if you change a file |
+| `guardian_search` | ~70 | Find endpoints, models, modules by keyword |
+| `guardian_model` | ~90 | Full field details (only when needed) |
+| `guardian_metrics` | ~50 | Session usage stats |
+
+All responses are compact JSON — no pretty-printing, no verbose keys. Repeated calls are cached (30s TTL). Usage metrics tracked per session.
+
+**Manual setup** (if the extension doesn't auto-configure):
+
+Create `.mcp.json` at your project root:
+```json
+{
+  "mcpServers": {
+    "guardian": {
+      "command": "guardian",
+      "args": ["mcp-serve", "--specs", ".specs"]
+    }
+  }
+}
+```
+
+## VSCode Extension
+
+Install from [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=toolbaux.toolbaux-guardian):
+
+Search "ToolBaux Guardian" in Extensions, or:
+```
+Cmd+Shift+P → "Extensions: Install from VSIX"
+```
+
+**What it does automatically:**
+- Creates `.specs/`, config, and pre-commit hook on first activation
+- Configures MCP server for Claude Code and Cursor (`.mcp.json`)
+- Extracts architecture on every file save (5s debounce)
+- Shows drift status in status bar: `✓ Guardian: stable · 35 ep · 8 pg`
+
+**Commands** (Cmd+Shift+P):
+- Guardian: Initialize Project
+- Guardian: Generate AI Context
+- Guardian: Drift Check
+- Guardian: Generate Constraints
+
 ## Key Commands
 
 ```bash

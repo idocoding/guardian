@@ -141,274 +141,222 @@ async function loadIntel(): Promise<any> {
   return intel;
 }
 
-// ── Tool implementations ──
+// ── Helpers ──
 
-async function fileContext(args: { file: string }): Promise<string> {
-  const data = await loadIntel();
-  const file = args.file.replace(/^\.\//, "");
+const SKIP_SERVICES = new Set(["str", "dict", "int", "len", "float", "max", "join", "getattr", "lower", "open", "params.append", "updates.append"]);
 
-  // Find which module this file belongs to
-  const module = data.service_map?.find((m: any) =>
-    m.path && file.startsWith(m.path.replace(/^\.\//, ""))
-  );
+function compact(obj: any): string {
+  return JSON.stringify(obj);
+}
 
-  // Find endpoints in this file
-  const endpoints = Object.values(data.api_registry || {}).filter((ep: any) =>
-    ep.file && file.includes(ep.file.replace(/^\.\//, ""))
-  );
+function findModule(data: any, file: string) {
+  return data.service_map?.find((m: any) => m.path && file.replace(/^\.\//, "").startsWith(m.path.replace(/^\.\//, "")));
+}
 
-  // Find models in this file
-  const models = Object.values(data.model_registry || {}).filter((m: any) =>
-    m.file && file.includes(m.file.replace(/^\.\//, ""))
-  );
+function findEndpointsInFile(data: any, file: string) {
+  const f = file.replace(/^\.\//, "");
+  return Object.values(data.api_registry || {}).filter((ep: any) => ep.file && f.includes(ep.file.replace(/^\.\//, "")));
+}
 
-  // Find which endpoints call services defined in this file
-  const calledBy: string[] = [];
+function findModelsInFile(data: any, file: string) {
+  const f = file.replace(/^\.\//, "");
+  return Object.values(data.model_registry || {}).filter((m: any) => m.file && f.includes(m.file.replace(/^\.\//, "")));
+}
+
+// ── Tool implementations (compact JSON, no redundancy) ──
+
+async function orient(): Promise<string> {
+  const d = await loadIntel();
+  const c = d.meta?.counts || {};
+  const mods = (d.service_map || []).filter((m: any) => m.file_count > 0);
+  const topMods = mods.sort((a: any, b: any) => (b.endpoint_count || 0) - (a.endpoint_count || 0)).slice(0, 6);
+  return compact({
+    p: d.meta?.project,
+    ep: c.endpoints, mod: c.models, pg: c.pages, m: c.modules,
+    top: topMods.map((m: any) => [m.id, m.endpoint_count, m.layer]),
+    pages: (d.frontend_pages || []).map((p: any) => p.path),
+  });
+}
+
+async function context(args: { target: string }): Promise<string> {
+  const d = await loadIntel();
+  const t = args.target;
+
+  // Check if target is an endpoint (e.g. "POST /sessions/start")
+  const epMatch = t.match(/^(GET|POST|PUT|DELETE|PATCH)\s+(.+)$/i);
+  if (epMatch) {
+    const ep: any = d.api_registry?.[`${epMatch[1].toUpperCase()} ${epMatch[2]}`]
+      || Object.values(d.api_registry || {}).find((e: any) => e.method === epMatch![1].toUpperCase() && e.path === epMatch![2]);
+    if (!ep) return compact({ err: "not found" });
+    const svcs = (ep.service_calls || []).filter((s: string) => !SKIP_SERVICES.has(s));
+    return compact({
+      ep: `${ep.method} ${ep.path}`, h: ep.handler, f: ep.file, m: ep.module,
+      req: ep.request_schema, res: ep.response_schema,
+      calls: svcs, ai: ep.ai_operations?.length || 0,
+    });
+  }
+
+  // Otherwise treat as file path
+  const file = t.replace(/^\.\//, "");
+  const mod = findModule(d, file);
+  const eps = findEndpointsInFile(d, file);
+  const models = findModelsInFile(d, file);
+
   const fileName = path.basename(file, path.extname(file));
-  for (const [key, ep] of Object.entries(data.api_registry || {})) {
-    const e = ep as any;
-    if (e.service_calls?.some((s: string) => s.toLowerCase().includes(fileName.toLowerCase()))) {
-      calledBy.push(`${e.method} ${e.path} (${e.handler})`);
+  const calledBy: string[] = [];
+  for (const ep of Object.values(d.api_registry || {}) as any[]) {
+    if (ep.service_calls?.some((s: string) => s.toLowerCase().includes(fileName.toLowerCase()))) {
+      calledBy.push(`${ep.method} ${ep.path}`);
     }
   }
 
-  // Find what this file's endpoints call
-  const calls = endpoints.flatMap((ep: any) =>
-    (ep.service_calls || []).filter((s: string) =>
-      !["str", "dict", "int", "len", "float", "max", "join", "getattr"].includes(s)
-    )
-  );
+  const calls = eps.flatMap((ep: any) => (ep.service_calls || []).filter((s: string) => !SKIP_SERVICES.has(s)));
 
-  // Find frontend pages that use APIs from this module
-  const pages = (data.frontend_pages || []).filter((p: any) =>
-    p.api_calls?.some((call: string) =>
-      endpoints.some((ep: any) => call.includes(ep.path?.split("{")[0]))
-    )
-  );
-
-  return JSON.stringify({
-    file,
-    module: module ? { id: module.id, layer: module.layer, file_count: module.file_count, imports: module.imports } : null,
-    endpoints_in_file: endpoints.map((ep: any) => `${ep.method} ${ep.path} → ${ep.handler}`),
-    models_in_file: models.map((m: any) => `${m.name} (${m.framework}, ${m.fields?.length || 0} fields)`),
-    calls_downstream: [...new Set(calls)],
-    called_by_upstream: calledBy.slice(0, 10),
-    frontend_pages_using: pages.map((p: any) => p.path),
-    coupling: module?.coupling_score ?? null,
-  }, null, 2);
+  return compact({
+    f: file,
+    mod: mod ? [mod.id, mod.layer] : null,
+    ep: eps.map((e: any) => `${e.method} ${e.path}`),
+    models: models.map((m: any) => [m.name, m.fields?.length || 0]),
+    calls: [...new Set(calls)],
+    calledBy: calledBy.slice(0, 8),
+  });
 }
 
-async function search(args: { query: string; types?: string }): Promise<string> {
-  const data = await loadIntel();
-  const q = args.query.toLowerCase();
-  const types = (args.types || "models,endpoints,modules").split(",").map((t: string) => t.trim());
-  const results: any = {};
+async function impact(args: { target: string }): Promise<string> {
+  const d = await loadIntel();
+  const file = args.target.replace(/^\.\//, "");
 
-  if (types.includes("endpoints")) {
-    results.endpoints = Object.values(data.api_registry || {})
-      .filter((ep: any) =>
-        ep.path?.toLowerCase().includes(q) ||
-        ep.handler?.toLowerCase().includes(q) ||
-        ep.service_calls?.some((s: string) => s.toLowerCase().includes(q))
-      )
-      .slice(0, 10)
-      .map((ep: any) => `${ep.method} ${ep.path} → ${ep.handler} [${ep.module}]`);
-  }
-
-  if (types.includes("models")) {
-    results.models = Object.values(data.model_registry || {})
-      .filter((m: any) =>
-        m.name?.toLowerCase().includes(q) ||
-        m.fields?.some((f: string) => f.toLowerCase().includes(q))
-      )
-      .slice(0, 10)
-      .map((m: any) => `${m.name} (${m.framework}, ${m.fields?.length} fields, ${m.file})`);
-  }
-
-  if (types.includes("modules")) {
-    results.modules = (data.service_map || [])
-      .filter((m: any) =>
-        m.id?.toLowerCase().includes(q) ||
-        m.path?.toLowerCase().includes(q)
-      )
-      .slice(0, 10)
-      .map((m: any) => `${m.id} (${m.type}, ${m.endpoint_count} eps, ${m.file_count} files, imports: ${m.imports?.join(",") || "none"})`);
-  }
-
-  return JSON.stringify(results, null, 2);
-}
-
-async function endpointTrace(args: { method: string; path: string }): Promise<string> {
-  const data = await loadIntel();
-  const key = `${args.method.toUpperCase()} ${args.path}`;
-  const ep = data.api_registry?.[key] || Object.values(data.api_registry || {}).find((e: any) =>
-    e.method === args.method.toUpperCase() && e.path === args.path
-  );
-
-  if (!ep) return JSON.stringify({ error: `Endpoint ${key} not found` });
-
-  // Find which frontend pages call this endpoint
-  const frontendCallers = (data.frontend_pages || []).filter((p: any) =>
-    p.api_calls?.some((call: string) => call.includes(args.path.split("{")[0]))
-  );
-
-  // Find what models this endpoint uses
-  const models = Object.values(data.model_registry || {}).filter((m: any) =>
-    (ep as any).request_schema === m.name || (ep as any).response_schema === m.name
-  );
-
-  return JSON.stringify({
-    endpoint: `${(ep as any).method} ${(ep as any).path}`,
-    handler: (ep as any).handler,
-    file: (ep as any).file,
-    module: (ep as any).module,
-    request_schema: (ep as any).request_schema,
-    response_schema: (ep as any).response_schema,
-    service_calls: (ep as any).service_calls,
-    ai_operations: (ep as any).ai_operations,
-    patterns: (ep as any).patterns,
-    models_used: models.map((m: any) => ({ name: m.name, fields: m.fields })),
-    frontend_callers: frontendCallers.map((p: any) => p.path),
-  }, null, 2);
-}
-
-async function impactCheck(args: { file: string }): Promise<string> {
-  const data = await loadIntel();
-  const file = args.file.replace(/^\.\//, "");
-
-  // Find all endpoints in this file
-  const endpoints = Object.values(data.api_registry || {}).filter((ep: any) =>
-    ep.file && file.includes(ep.file.replace(/^\.\//, ""))
-  );
-
-  // Find all models in this file
-  const models = Object.values(data.model_registry || {}).filter((m: any) =>
-    m.file && file.includes(m.file.replace(/^\.\//, ""))
-  );
-
-  // Find endpoints that USE these models
+  const eps = findEndpointsInFile(d, file);
+  const models = findModelsInFile(d, file);
   const modelNames = new Set(models.map((m: any) => m.name));
-  const affectedEndpoints = Object.values(data.api_registry || {}).filter((ep: any) =>
-    ep.request_schema && modelNames.has(ep.request_schema) ||
-    ep.response_schema && modelNames.has(ep.response_schema)
+
+  const affectedEps = Object.values(d.api_registry || {}).filter((ep: any) =>
+    (ep.request_schema && modelNames.has(ep.request_schema)) ||
+    (ep.response_schema && modelNames.has(ep.response_schema))
   );
 
-  // Find modules that import from this file's module
-  const fileModule = data.service_map?.find((m: any) =>
-    m.path && file.startsWith(m.path.replace(/^\.\//, ""))
-  );
-  const dependentModules = fileModule
-    ? (data.service_map || []).filter((m: any) => m.imports?.includes(fileModule.id))
-    : [];
+  const mod = findModule(d, file);
+  const depMods = mod ? (d.service_map || []).filter((m: any) => m.imports?.includes(mod.id)) : [];
 
-  // Find frontend pages affected
-  const affectedPages = (data.frontend_pages || []).filter((p: any) =>
-    p.api_calls?.some((call: string) =>
-      endpoints.some((ep: any) => call.includes(ep.path?.split("{")[0]))
-    )
+  const affectedPages = (d.frontend_pages || []).filter((p: any) =>
+    p.api_calls?.some((call: string) => eps.some((ep: any) => call.includes(ep.path?.split("{")[0])))
   );
 
-  return JSON.stringify({
-    file,
-    direct_endpoints: endpoints.map((ep: any) => `${ep.method} ${ep.path}`),
-    models_defined: models.map((m: any) => m.name),
-    endpoints_using_these_models: affectedEndpoints.map((ep: any) => `${ep.method} ${ep.path}`),
-    dependent_modules: dependentModules.map((m: any) => m.id),
-    affected_frontend_pages: affectedPages.map((p: any) => p.path),
-    risk: endpoints.length + affectedEndpoints.length + dependentModules.length > 5 ? "HIGH" : "LOW",
-  }, null, 2);
+  const total = eps.length + affectedEps.length + depMods.length + affectedPages.length;
+
+  return compact({
+    f: file,
+    risk: total > 5 ? "HIGH" : total > 2 ? "MED" : "LOW",
+    ep: eps.map((e: any) => `${e.method} ${e.path}`),
+    models: models.map((m: any) => m.name),
+    affectedEp: affectedEps.map((e: any) => `${e.method} ${e.path}`),
+    depMods: depMods.map((m: any) => m.id),
+    pages: affectedPages.map((p: any) => p.path),
+  });
 }
 
-async function overview(): Promise<string> {
-  const data = await loadIntel();
-  return JSON.stringify({
-    project: data.meta?.project,
-    counts: data.meta?.counts,
-    modules: (data.service_map || [])
-      .filter((m: any) => m.file_count > 0)
-      .map((m: any) => ({ id: m.id, type: m.type, layer: m.layer, endpoints: m.endpoint_count, files: m.file_count, imports: m.imports })),
-    pages: (data.frontend_pages || []).map((p: any) => ({ route: p.path, component: p.component })),
-    top_endpoints: Object.values(data.api_registry || {})
-      .sort((a: any, b: any) => (b.service_calls?.length || 0) - (a.service_calls?.length || 0))
-      .slice(0, 5)
-      .map((ep: any) => `${ep.method} ${ep.path} (${ep.service_calls?.length || 0} service calls)`),
-  }, null, 2);
+async function search(args: { query: string }): Promise<string> {
+  const d = await loadIntel();
+  const q = args.query.toLowerCase();
+
+  const eps = Object.values(d.api_registry || {}).filter((ep: any) =>
+    ep.path?.toLowerCase().includes(q) || ep.handler?.toLowerCase().includes(q) ||
+    ep.service_calls?.some((s: string) => s.toLowerCase().includes(q))
+  ).slice(0, 8).map((ep: any) => `${(ep as any).method} ${(ep as any).path} [${(ep as any).module}]`);
+
+  const models = Object.values(d.model_registry || {}).filter((m: any) =>
+    m.name?.toLowerCase().includes(q) || m.fields?.some((f: string) => f.toLowerCase().includes(q))
+  ).slice(0, 8).map((m: any) => `${(m as any).name}:${(m as any).fields?.length}f`);
+
+  const mods = (d.service_map || []).filter((m: any) =>
+    m.id?.toLowerCase().includes(q)
+  ).slice(0, 5).map((m: any) => `${m.id}:${m.endpoint_count}ep`);
+
+  return compact({ ep: eps, mod: models, m: mods });
+}
+
+async function model(args: { name: string }): Promise<string> {
+  const d = await loadIntel();
+  const m = d.model_registry?.[args.name];
+  if (!m) return compact({ err: "not found" });
+
+  const usedBy = Object.values(d.api_registry || {}).filter((ep: any) =>
+    ep.request_schema === args.name || ep.response_schema === args.name
+  ).map((ep: any) => `${ep.method} ${ep.path}`);
+
+  return compact({
+    name: m.name, fw: m.framework, f: m.file,
+    fields: m.fields, rels: m.relationships,
+    usedBy,
+  });
 }
 
 // ── MCP protocol ──
 
 const TOOLS: Tool[] = [
   {
-    name: "guardian_file_context",
-    description: "Get upstream/downstream dependencies, endpoints, models, and coupling for a file. Call this BEFORE editing any file.",
+    name: "guardian_orient",
+    description: "Compact project summary. Call at session start. Returns: project name, counts, top modules, page routes.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "guardian_context",
+    description: "Get dependencies for a file or endpoint. Pass a file path (e.g. 'backend/service-conversation/engine.py') or an endpoint (e.g. 'POST /sessions/start').",
     inputSchema: {
       type: "object",
       properties: {
-        file: { type: "string", description: "File path relative to project root (e.g. 'backend/service-conversation/engine.py')" },
+        target: { type: "string", description: "File path or 'METHOD /path' endpoint" },
       },
-      required: ["file"],
+      required: ["target"],
+    },
+  },
+  {
+    name: "guardian_impact",
+    description: "What breaks if you change this file? Returns affected endpoints, models, modules, pages, and risk level.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "File path to check" },
+      },
+      required: ["target"],
     },
   },
   {
     name: "guardian_search",
-    description: "Search the codebase for endpoints, models, or modules matching a keyword.",
+    description: "Find endpoints, models, modules by keyword. Returns compact one-line results.",
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Search keyword (e.g. 'session', 'auth', 'TTS')" },
-        types: { type: "string", description: "Comma-separated: models,endpoints,modules (default: all)" },
+        query: { type: "string", description: "Search keyword" },
       },
       required: ["query"],
     },
   },
   {
-    name: "guardian_endpoint_trace",
-    description: "Trace an API endpoint's full chain: frontend callers, handler, service calls, models, AI operations.",
+    name: "guardian_model",
+    description: "Get full field list and usage for a specific model. Only call when you need field details.",
     inputSchema: {
       type: "object",
       properties: {
-        method: { type: "string", description: "HTTP method (GET, POST, PUT, DELETE)" },
-        path: { type: "string", description: "Endpoint path (e.g. '/sessions/start')" },
+        name: { type: "string", description: "Model name (e.g. 'StartSessionRequest')" },
       },
-      required: ["method", "path"],
-    },
-  },
-  {
-    name: "guardian_impact_check",
-    description: "Check what endpoints, models, modules, and pages are affected if you change a file. Call this BEFORE making changes to high-coupling files.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        file: { type: "string", description: "File path to check impact for" },
-      },
-      required: ["file"],
-    },
-  },
-  {
-    name: "guardian_overview",
-    description: "Get project summary: modules, pages, top endpoints, counts. Call this at session start for orientation.",
-    inputSchema: {
-      type: "object",
-      properties: {},
+      required: ["name"],
     },
   },
   {
     name: "guardian_metrics",
-    description: "Get MCP usage metrics for this session: calls made, tokens spent, tokens saved, cache hits. Call at end of session to evaluate guardian's usefulness.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-    },
+    description: "MCP usage stats for this session. Call at end to evaluate guardian's usefulness.",
+    inputSchema: { type: "object", properties: {} },
   },
 ];
 
 const TOOL_HANDLERS: Record<string, (args: any) => Promise<string>> = {
-  guardian_file_context: fileContext,
+  guardian_orient: orient,
+  guardian_context: context,
+  guardian_impact: impact,
   guardian_search: search,
-  guardian_endpoint_trace: endpointTrace,
-  guardian_impact_check: impactCheck,
-  guardian_overview: overview,
-  guardian_metrics: async () => JSON.stringify(metrics.summary(), null, 2),
+  guardian_model: model,
+  guardian_metrics: async () => compact(metrics.summary()),
 };
 
 function respond(id: number | string | null, result: any): void {
