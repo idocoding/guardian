@@ -1,6 +1,6 @@
 {
   "name": "@toolbaux/guardian",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "type": "module",
   "description": "Architectural intelligence for codebases. Verify that AI-generated code matches your architectural intent.",
   "keywords": [
