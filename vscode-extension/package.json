@@ -1,8 +1,8 @@
 {
-  "name": "guardian-vscode",
-  "displayName": "Guardian by ToolBaux",
-  "description": "Architectural intelligence inside your editor — by ToolBaux",
-  "version": "0.1.0",
+  "name": "toolbaux-guardian",
+  "displayName": "ToolBaux Guardian",
+  "description": "Architectural intelligence for codebases — auto-extracts context for AI coding tools",
+  "version": "0.1.1",
   "publisher": "toolbaux",
   "type": "commonjs",
   "engines": {
@@ -19,39 +19,39 @@
     "commands": [
       {
         "command": "guardian.generateAiContext",
-        "title": "SpecGuard: Generate AI Context"
+        "title": "Guardian: Generate AI Context"
       },
       {
         "command": "guardian.driftCheck",
-        "title": "SpecGuard: Drift Check"
+        "title": "Guardian: Drift Check"
       },
       {
         "command": "guardian.generateConstraints",
-        "title": "SpecGuard: Generate Constraints"
+        "title": "Guardian: Generate Constraints"
       },
       {
         "command": "guardian.copyConstraintsPrompt",
-        "title": "SpecGuard: Copy Constraints Prompt"
+        "title": "Guardian: Copy Constraints Prompt"
       },
       {
         "command": "guardian.simulateDrift",
-        "title": "SpecGuard: Simulate Drift"
+        "title": "Guardian: Simulate Drift"
       },
       {
         "command": "guardian.guardPatch",
-        "title": "SpecGuard: Guard Patch (Simulate)"
+        "title": "Guardian: Guard Patch (Simulate)"
       },
       {
         "command": "guardian.guardedRun",
-        "title": "SpecGuard: Guarded Run"
+        "title": "Guardian: Guarded Run"
       },
       {
         "command": "guardian.init",
-        "title": "SpecGuard: Initialize Project"
+        "title": "Guardian: Initialize Project"
       }
     ],
     "configuration": {
-      "title": "SpecGuard",
+      "title": "Guardian",
       "properties": {
         "guardian.backendRoot": {
           "type": "string",
@@ -65,7 +65,7 @@
         },
         "guardian.output": {
           "type": "string",
-          "default": "specs-out/drift.report.json",
+          "default": ".specs/machine/drift.report.json",
           "description": "Path for drift report output (relative to workspace)."
         },
         "guardian.configPath": {
@@ -86,7 +86,7 @@
         "guardian.historyPath": {
           "type": "string",
           "default": "",
-          "description": "Optional path for drift history JSONL. If empty, SpecGuard uses its default."
+          "description": "Optional path for drift history JSONL."
         },
         "guardian.writeBaseline": {
           "type": "boolean",
@@ -96,7 +96,7 @@
         "guardian.baselinePath": {
           "type": "string",
           "default": "",
-          "description": "Optional path for baseline JSON. If empty, SpecGuard uses its default."
+          "description": "Optional path for baseline JSON."
         },
         "guardian.baselineSummaryPath": {
           "type": "string",
@@ -105,12 +105,12 @@
         },
         "guardian.constraintsOutput": {
           "type": "string",
-          "default": "specs-out/constraints.json",
+          "default": ".specs/machine/constraints.json",
           "description": "Output path for constraints JSON."
         },
         "guardian.simulationOutput": {
           "type": "string",
-          "default": "specs-out/drift.simulation.json",
+          "default": ".specs/machine/drift.simulation.json",
           "description": "Output path for drift simulation report."
         },
         "guardian.simulationMode": {
@@ -132,7 +132,7 @@
         "guardian.showOutputOnRun": {
           "type": "boolean",
           "default": false,
-          "description": "Show the SpecGuard output channel when a run starts."
+          "description": "Show the Guardian output channel when a run starts."
         },
         "guardian.autoExtract": {
           "type": "boolean",
