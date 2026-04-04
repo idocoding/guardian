@@ -230,7 +230,97 @@ describe("MCP Tools", () => {
       { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "guardian_orient", arguments: {} } },
     ]);
     const raw = (responses.find((r: any) => r.id === 2) as any)?.result?.content?.[0]?.text || "";
-    // Compact JSON has no newlines
     expect(raw).not.toContain("\n");
+  });
+});
+
+describe("MCP Protocol Compliance", () => {
+  it("initialize returns tools, resources, and prompts capabilities", async () => {
+    const responses = await sendToMcp([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { capabilities: {} } },
+    ]);
+    const r = responses.find((r: any) => r.id === 1) as any;
+    expect(r.result.capabilities.tools).toBeDefined();
+    expect(r.result.capabilities.resources).toBeDefined();
+    expect(r.result.capabilities.prompts).toBeDefined();
+    expect(r.result.serverInfo.name).toBe("guardian");
+  });
+
+  it("resources/list returns empty array", async () => {
+    const responses = await sendToMcp([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { capabilities: {} } },
+      { jsonrpc: "2.0", id: 2, method: "resources/list", params: {} },
+    ]);
+    const r = responses.find((r: any) => r.id === 2) as any;
+    expect(r.result.resources).toEqual([]);
+  });
+
+  it("resources/templates/list returns empty array", async () => {
+    const responses = await sendToMcp([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { capabilities: {} } },
+      { jsonrpc: "2.0", id: 2, method: "resources/templates/list", params: {} },
+    ]);
+    const r = responses.find((r: any) => r.id === 2) as any;
+    expect(r.result.resourceTemplates).toEqual([]);
+  });
+
+  it("prompts/list returns empty array", async () => {
+    const responses = await sendToMcp([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { capabilities: {} } },
+      { jsonrpc: "2.0", id: 2, method: "prompts/list", params: {} },
+    ]);
+    const r = responses.find((r: any) => r.id === 2) as any;
+    expect(r.result.prompts).toEqual([]);
+  });
+
+  it("tools/list returns all 6 tools", async () => {
+    const responses = await sendToMcp([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { capabilities: {} } },
+      { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
+    ]);
+    const r = responses.find((r: any) => r.id === 2) as any;
+    const names = r.result.tools.map((t: any) => t.name);
+    expect(names).toContain("guardian_orient");
+    expect(names).toContain("guardian_context");
+    expect(names).toContain("guardian_impact");
+    expect(names).toContain("guardian_search");
+    expect(names).toContain("guardian_model");
+    expect(names).toContain("guardian_metrics");
+    expect(names.length).toBe(6);
+  });
+
+  it("unknown method with id returns error", async () => {
+    const responses = await sendToMcp([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { capabilities: {} } },
+      { jsonrpc: "2.0", id: 2, method: "nonexistent/method", params: {} },
+    ]);
+    const r = responses.find((r: any) => r.id === 2) as any;
+    expect(r.error).toBeDefined();
+    expect(r.error.code).toBe(-32601);
+  });
+
+  it("notification without id does not produce error response", async () => {
+    const responses = await sendToMcp([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { capabilities: {} } },
+      { jsonrpc: "2.0", method: "notifications/something", params: {} },
+      { jsonrpc: "2.0", id: 3, method: "tools/list", params: {} },
+    ]);
+    // Should have responses for id 1 and 3, but no error for the notification
+    const ids = responses.map((r: any) => r.id).filter(Boolean);
+    expect(ids).toContain(1);
+    expect(ids).toContain(3);
+    // No error response for the notification (it has no id)
+    const errors = responses.filter((r: any) => r.error && !r.id);
+    expect(errors.length).toBe(0);
+  });
+
+  it("unknown tool returns isError flag", async () => {
+    const responses = await sendToMcp([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { capabilities: {} } },
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "nonexistent_tool", arguments: {} } },
+    ]);
+    const r = responses.find((r: any) => r.id === 2) as any;
+    expect(r.result.isError).toBe(true);
+    expect(r.result.content[0].text).toContain("Unknown tool");
   });
 });

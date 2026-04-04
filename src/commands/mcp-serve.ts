@@ -449,8 +449,12 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
     case "initialize":
       respond(req.id, {
         protocolVersion: "2024-11-05",
-        capabilities: { tools: {} },
-        serverInfo: { name: "guardian", version: "0.1.0" },
+        capabilities: {
+          tools: {},
+          resources: {},
+          prompts: {},
+        },
+        serverInfo: { name: "guardian", version: "0.1.13" },
       });
       break;
 
@@ -460,6 +464,18 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
 
     case "tools/list":
       respond(req.id, { tools: TOOLS });
+      break;
+
+    case "resources/list":
+      respond(req.id, { resources: [] });
+      break;
+
+    case "resources/templates/list":
+      respond(req.id, { resourceTemplates: [] });
+      break;
+
+    case "prompts/list":
+      respond(req.id, { prompts: [] });
       break;
 
     case "tools/call": {
@@ -501,7 +517,10 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
     }
 
     default:
-      respondError(req.id, -32601, `Method not found: ${req.method}`);
+      // Notifications (no id) don't need a response
+      if (req.id != null) {
+        respondError(req.id, -32601, `Method not found: ${req.method}`);
+      }
   }
 }
 
