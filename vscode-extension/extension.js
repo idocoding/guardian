@@ -540,6 +540,9 @@ function activate(context) {
         updateStatusBar("stable", intel.meta?.counts?.endpoints, intel.meta?.counts?.pages);
       }
 
+      // Ensure MCP is configured (retries if previous attempts failed)
+      configureMcp(workspaceRoot, output);
+
       output.appendLine("[Guardian] Background extract complete.");
     }
   }
@@ -612,24 +615,15 @@ function getWorkspaceContext() {
 
   const workspaceRoot = workspaceFolder.uri.fsPath;
   const cfg = vscode.workspace.getConfiguration("guardian");
-  const backendRoot = cfg.get("backendRoot", "backend");
-  const frontendRoot = cfg.get("frontendRoot", "frontend");
+  const backendRoot = cfg.get("backendRoot", "");
+  const frontendRoot = cfg.get("frontendRoot", "");
   const configPathSetting = cfg.get("configPath", "");
   const commandPathSetting = cfg.get("commandPath", "");
   const showOutputOnRun = cfg.get("showOutputOnRun", false);
 
-  const backendAbs = resolvePath(backendRoot, workspaceRoot);
-  const frontendAbs = resolvePath(frontendRoot, workspaceRoot);
+  const backendAbs = backendRoot ? resolvePath(backendRoot, workspaceRoot) : workspaceRoot;
+  const frontendAbs = frontendRoot ? resolvePath(frontendRoot, workspaceRoot) : workspaceRoot;
   const configAbs = configPathSetting ? resolvePath(configPathSetting, workspaceRoot) : null;
-
-  if (!backendAbs || !fs.existsSync(backendAbs)) {
-    vscode.window.showErrorMessage(`Guardian: Backend root not found at ${backendAbs}`);
-    return null;
-  }
-  if (!frontendAbs || !fs.existsSync(frontendAbs)) {
-    vscode.window.showErrorMessage(`Guardian: Frontend root not found at ${frontendAbs}`);
-    return null;
-  }
 
   const commandPath = resolveCommandPath(commandPathSetting, workspaceRoot);
 

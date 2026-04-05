@@ -3,6 +3,8 @@
 [![npm version](https://img.shields.io/npm/v/@toolbaux/guardian.svg)](https://www.npmjs.com/package/@toolbaux/guardian)
 [![license](https://img.shields.io/npm/l/@toolbaux/guardian.svg)](./LICENSE)
 
+> **Beta Release** — Guardian is under active development. Core features (extract, context, drift, MCP server) are stable and used daily across multiple projects, but you may encounter minor issues with edge cases in framework detection or config handling. Bug reports and feedback welcome via [GitHub Issues](https://github.com/idocoding/guardian/issues).
+
 Architectural intelligence for codebases. One command turns your repo into compact, machine-readable context that AI coding tools can reason about without hallucinating.
 
 ```bash
@@ -53,7 +55,7 @@ After `guardian init`, your project gets:
 - `.specs/` directory with architecture snapshots
 - `CLAUDE.md` with auto-injected context (refreshed on every save and commit)
 - Pre-commit hook that keeps context fresh automatically
-- `guardian.config.json` with auto-detected backend/frontend roots
+- `guardian.config.json` for project settings (roots auto-detected at runtime)
 
 ## Claude Code / Cursor Integration
 
@@ -96,9 +98,8 @@ Guardian includes an MCP server that Claude Code and Cursor connect to automatic
 
 All responses are compact JSON — no pretty-printing, no verbose keys. Repeated calls are cached (30s TTL). Usage metrics tracked per session.
 
-**Manual setup** (if the extension doesn't auto-configure):
+**Setup:** `guardian init` and the VSCode extension auto-create `.mcp.json` at your project root. If you need to create it manually:
 
-Create `.mcp.json` at your project root:
 ```json
 {
   "mcpServers": {
@@ -109,6 +110,8 @@ Create `.mcp.json` at your project root:
   }
 }
 ```
+
+> **Note:** After `.mcp.json` is created or modified, you must **restart your Claude Code / Cursor session** (or reload the VSCode window) for the MCP server to connect. MCP config is only read at session start.
 
 ## VSCode Extension
 
@@ -276,14 +279,14 @@ guardian feature-context --spec feature-specs/billing.yaml
 <details>
 <summary><strong>Configuration</strong></summary>
 
-`guardian.config.json` at project root (auto-created by `guardian init`):
+`guardian.config.json` at project root (auto-created by `guardian init`). Backend and frontend roots are auto-detected at runtime — only set them if auto-detection picks the wrong directory:
 
 ```json
 {
   "project": {
+    "description": "Short product description for generated docs",
     "backendRoot": "./backend",
-    "frontendRoot": "./frontend",
-    "description": "Short product description for generated docs"
+    "frontendRoot": "./frontend"
   },
   "frontend": {
     "routeDirs": ["app"],

@@ -25,10 +25,6 @@ export type InitOptions = {
 };
 
 const DEFAULT_CONFIG = {
-  project: {
-    backendRoot: "./backend",
-    frontendRoot: "./frontend",
-  },
   docs: {
     mode: "full",
   },
@@ -94,31 +90,8 @@ export async function runInit(options: InitOptions): Promise<void> {
   // 2. Create guardian.config.json if missing
   const configPath = path.join(root, "guardian.config.json");
   if (!(await fileExists(configPath))) {
-    const config = { ...DEFAULT_CONFIG };
-    // Auto-detect roots
-    if (options.backendRoot) {
-      config.project.backendRoot = options.backendRoot;
-    } else {
-      for (const candidate of ["./backend", "./server", "./api", "./src"]) {
-        if (await dirExists(path.join(root, candidate))) {
-          config.project.backendRoot = candidate;
-          break;
-        }
-      }
-    }
-    if (options.frontendRoot) {
-      config.project.frontendRoot = options.frontendRoot;
-    } else {
-      for (const candidate of ["./frontend", "./client", "./web", "./app"]) {
-        if (await dirExists(path.join(root, candidate))) {
-          config.project.frontendRoot = candidate;
-          break;
-        }
-      }
-    }
-
-    await fs.writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
-    console.log(`  ✓ Created guardian.config.json (backend: ${config.project.backendRoot}, frontend: ${config.project.frontendRoot})`);
+    await fs.writeFile(configPath, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n", "utf8");
+    console.log("  ✓ Created guardian.config.json");
   } else {
     console.log("  · guardian.config.json already exists");
   }
@@ -251,6 +224,33 @@ async function dirExists(p: string): Promise<boolean> {
 }
 
 async function setupClaudeCodeHooks(root: string, specsDir: string): Promise<void> {
+  // Create .mcp.json at project root (MCP standard — works with Claude Code, Cursor, etc.)
+  const mcpJsonPath = path.join(root, ".mcp.json");
+  try {
+    let mcpConfig: Record<string, unknown> = {};
+    if (await fileExists(mcpJsonPath)) {
+      try {
+        mcpConfig = JSON.parse(await fs.readFile(mcpJsonPath, "utf8"));
+      } catch {
+        // Corrupted — overwrite
+      }
+    }
+    if (!mcpConfig.mcpServers) mcpConfig.mcpServers = {};
+    const servers = mcpConfig.mcpServers as Record<string, unknown>;
+    if (!servers.guardian) {
+      servers.guardian = {
+        command: "guardian",
+        args: ["mcp-serve", "--specs", specsDir],
+      };
+      await fs.writeFile(mcpJsonPath, JSON.stringify(mcpConfig, null, 2) + "\n", "utf8");
+      console.log("  ✓ Created .mcp.json (MCP server config)");
+    } else {
+      console.log("  · .mcp.json already has guardian MCP config");
+    }
+  } catch (err) {
+    console.warn(`  ⚠ Could not create .mcp.json: ${(err as Error).message}`);
+  }
+
   const claudeDir = path.join(root, ".claude");
   const hooksDir = path.join(claudeDir, "hooks");
   const settingsPath = path.join(claudeDir, "settings.json");
