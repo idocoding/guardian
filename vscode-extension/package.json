@@ -2,7 +2,7 @@
   "name": "toolbaux-guardian",
   "displayName": "ToolBaux Guardian",
   "description": "Architectural intelligence for codebases — auto-extracts context for AI coding tools",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "publisher": "toolbaux",
   "type": "commonjs",
   "engines": {
