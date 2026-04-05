@@ -1,6 +1,18 @@
 # Guardian VSCode Extension
 
+> **Beta Release** — This extension is under active development. Core features work but you may encounter minor issues. Bug reports welcome via [GitHub Issues](https://github.com/idocoding/guardian/issues).
+
 Architectural intelligence inside your editor. Auto-extracts architecture context on save, shows drift status in the status bar, and keeps CLAUDE.md fresh for AI coding tools.
+
+## Prerequisites
+
+This extension requires the **Guardian CLI** (`@toolbaux/guardian`) to be installed:
+
+```bash
+npm install -g @toolbaux/guardian
+```
+
+The extension invokes the CLI for all extraction, drift, and context operations. Without it, no commands will work.
 
 ## Features
 
@@ -24,7 +36,7 @@ npx vsce package --allow-missing-repository
 # Cmd+Shift+P → "Extensions: Install from VSIX" → pick the .vsix
 ```
 
-Requires `guardian` CLI in PATH or `node_modules/.bin/`.
+Requires `@toolbaux/guardian` CLI — see [Prerequisites](#prerequisites) above.
 
 ## Commands
 
@@ -45,8 +57,8 @@ Requires `guardian` CLI in PATH or `node_modules/.bin/`.
 |---------|---------|-------------|
 | `guardian.autoExtract` | `true` | Auto-run extract + context injection on save |
 | `guardian.runOnSave` | `false` | Also run drift check on save |
-| `guardian.backendRoot` | `"backend"` | Backend root path |
-| `guardian.frontendRoot` | `"frontend"` | Frontend root path |
+| `guardian.backendRoot` | `""` | Backend root override (auto-detected if empty) |
+| `guardian.frontendRoot` | `""` | Frontend root override (auto-detected if empty) |
 | `guardian.configPath` | `""` | Path to guardian.config.json |
 | `guardian.commandPath` | `""` | Custom path to guardian CLI |
 | `guardian.debounceMs` | `750` | Debounce for drift-on-save |
