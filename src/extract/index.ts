@@ -16,6 +16,10 @@ import { logResolvedProjectPaths, resolveProjectPaths } from "../project-discove
 import type { ArchitectureSnapshot, BackendAnalysis, FrontendAnalysis, UxSnapshot } from "./types.js";
 import { analyzeDepth } from "./analyzers/depth.js";
 import type { StructuralIntelligenceReport } from "./types.js";
+import {
+  buildFunctionIntelligenceFromRoots,
+  writeFunctionIntelligence,
+} from "./function-intel.js";
 
 export type ExtractProjectOptions = {
   projectRoot?: string;
@@ -229,6 +233,19 @@ export async function extractProject(
     const siPath = path.join(layout.machineDir, "structural-intelligence.json");
     await fs.writeFile(siPath, JSON.stringify(siReports, null, 2), "utf8");
     console.log(`Wrote ${siPath}`);
+  }
+
+  // Generate Function Intelligence — call graph, literal index across all languages.
+  // Runs as an additive second pass; never modifies the architecture snapshot.
+  try {
+    const allRoots = (architecture.project.roots ?? [projectRoot]).map((r) =>
+      path.isAbsolute(r) ? r : path.join(projectRoot, r)
+    );
+    const funcIntel = await buildFunctionIntelligenceFromRoots(allRoots, config);
+    await writeFunctionIntelligence(layout.machineDir, funcIntel);
+  } catch (err) {
+    // Non-fatal — function intel is additive; don't block the main extract
+    console.warn(`Function intelligence skipped: ${(err as Error).message}`);
   }
 
   return result;

@@ -3,10 +3,14 @@ import path from "node:path";
 import yaml from "js-yaml";
 import { loadHeatmap, type DriftHeatmap } from "../extract/compress.js";
 import type { ArchitectureSnapshot, UxSnapshot } from "../extract/types.js";
+import {
+  loadFunctionIntelligence,
+  type FunctionIntelligence,
+} from "../extract/function-intel.js";
 import { resolveMachineInputDir } from "../output-layout.js";
 import { DEFAULT_SPECS_DIR } from "../config.js";
 
-type SearchType = "models" | "endpoints" | "components" | "modules" | "tasks";
+type SearchType = "models" | "endpoints" | "components" | "modules" | "tasks" | "functions";
 
 export type SearchOptions = {
   input: string;
@@ -26,13 +30,15 @@ export async function runSearch(options: SearchOptions): Promise<void> {
   const inputDir = await resolveMachineInputDir(options.input || DEFAULT_SPECS_DIR);
   const { architecture, ux } = await loadSnapshots(inputDir);
   const heatmap = await loadHeatmap(inputDir);
+  const funcIntel = await loadFunctionIntelligence(inputDir);
   const types = normalizeTypes(options.types);
   const matches = searchSnapshots({
     architecture,
     ux,
     query: options.query,
     types,
-    heatmap
+    heatmap,
+    funcIntel,
   });
   const content = renderSearchMarkdown(options.query, matches);
 
@@ -96,7 +102,7 @@ function normalizeTypes(types?: string[]): Set<SearchType> {
 
   return normalized.size > 0
     ? normalized
-    : new Set(["models", "endpoints", "components", "modules", "tasks"]);
+    : new Set(["models", "endpoints", "components", "modules", "tasks", "functions"]);
 }
 
 function tokenize(value: string): string[] {
@@ -159,8 +165,9 @@ function searchSnapshots(params: {
   query: string;
   types: Set<SearchType>;
   heatmap: DriftHeatmap | null;
+  funcIntel: FunctionIntelligence | null;
 }): SearchMatch[] {
-  const { architecture, ux, query, types, heatmap } = params;
+  const { architecture, ux, query, types, heatmap, funcIntel } = params;
   const queryTokens = tokenize(query);
   const matches: SearchMatch[] = [];
   const pageUsage = buildComponentPageUsage(ux);
@@ -300,6 +307,69 @@ function searchSnapshots(params: {
     }
   }
 
+  if (types.has("functions") && funcIntel) {
+    const queryTokens = tokenize(query);
+
+    // 1. Name match — function / theorem name contains a query token
+    for (const fn of funcIntel.functions) {
+      const score = scoreItem(queryTokens, {
+        name: fn.name,
+        file: fn.file,
+        text: [...fn.stringLiterals, ...fn.regexPatterns, ...fn.calls, fn.language],
+      });
+      if (score <= 0) continue;
+
+      const lineRange = `${fn.lines[0]}–${fn.lines[1]}`;
+      const detail: string[] = [];
+      if (fn.stringLiterals.length > 0) {
+        detail.push(`Literals: ${formatList(fn.stringLiterals.slice(0, 3).map((l) => `"${l.slice(0, 60)}"`), 3)}`);
+      }
+      if (fn.regexPatterns.length > 0) {
+        detail.push(`Patterns: ${formatList(fn.regexPatterns.slice(0, 3).map((p) => `/${p.slice(0, 60)}/`), 3)}`);
+      }
+      if (fn.calls.length > 0) {
+        detail.push(`Calls: ${formatList(fn.calls, 5)}`);
+      }
+
+      matches.push({
+        type: "functions",
+        name: `${fn.name} (${fn.language})`,
+        score,
+        markdown: [
+          `**${fn.name}** · ${fn.file}:${lineRange} · ${fn.language}${fn.isAsync ? " · async" : ""}`,
+          ...detail,
+        ],
+      });
+    }
+
+    // 2. Literal index match — query token appears in a function's string/regex literals
+    // (additive: surfaces functions whose body contains the queried literal even if
+    // the function name itself doesn't match)
+    for (const tok of queryTokens) {
+      const hits = funcIntel.literal_index[tok.toLowerCase()];
+      if (!hits) continue;
+      for (const hit of hits) {
+        // Skip if we already emitted this function via name match above
+        if (matches.some((m) => m.type === "functions" && m.name.startsWith(hit.function + " ("))) {
+          continue;
+        }
+        const fn = funcIntel.functions.find(
+          (f) => f.file === hit.file && f.name === hit.function
+        );
+        if (!fn) continue;
+        matches.push({
+          type: "functions",
+          name: `${fn.name} (${fn.language})`,
+          score: 0.6,
+          markdown: [
+            `**${fn.name}** · ${fn.file}:${fn.lines[0]}–${fn.lines[1]} · ${fn.language}`,
+            `Matched literal/pattern containing "${tok}"`,
+          ],
+        });
+      }
+    }
+  }
+
   return matches.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 }
 
@@ -363,7 +433,8 @@ function renderSearchMarkdown(query: string, matches: SearchMatch[]): string {
     ["endpoints", "Endpoints"],
     ["components", "Components"],
     ["modules", "Modules"],
-    ["tasks", "Tasks"]
+    ["tasks", "Tasks"],
+    ["functions", "Functions"],
   ];
 
   const lines: string[] = [];

@@ -3,11 +3,12 @@ import { TypeScriptAdapter } from "./typescript-adapter.js";
 import { JavaAdapter } from "./java-adapter.js";
 import { GoAdapter } from "./go-adapter.js";
 import { CSharpAdapter } from "./csharp-adapter.js";
+import { Lean4Adapter } from "./lean4-adapter.js";
 import { runAdapter } from "./runner.js";
 
-export { PythonAdapter, TypeScriptAdapter, JavaAdapter, GoAdapter, CSharpAdapter, runAdapter };
+export { PythonAdapter, TypeScriptAdapter, JavaAdapter, GoAdapter, CSharpAdapter, Lean4Adapter, runAdapter };
 
-export const ADAPTERS = [PythonAdapter, TypeScriptAdapter, JavaAdapter, GoAdapter, CSharpAdapter];
+export const ADAPTERS = [PythonAdapter, TypeScriptAdapter, JavaAdapter, GoAdapter, CSharpAdapter, Lean4Adapter];
 
 export function getAdapterForFile(file: string) {
   for (const adapter of ADAPTERS) {

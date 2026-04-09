@@ -11,8 +11,8 @@ import {
 } from "../../src/adapters/index.js";
 
 describe("Adapter Registry", () => {
-  it("exports exactly 5 adapters", () => {
-    expect(ADAPTERS).toHaveLength(5);
+  it("exports exactly 6 adapters (Python, TypeScript, Java, Go, C#, Lean4)", () => {
+    expect(ADAPTERS).toHaveLength(6);
   });
 
   it("getAdapterForFile returns correct adapter per extension", () => {

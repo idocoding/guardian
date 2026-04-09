@@ -4,7 +4,8 @@ import type {
   EndpointExtraction,
   ModelExtraction,
   ComponentExtraction,
-  TestExtraction
+  TestExtraction,
+  FunctionRecord,
 } from "./types.js";
 
 export function runAdapter(
@@ -16,13 +17,43 @@ export function runAdapter(
   models: ModelExtraction[];
   components: ComponentExtraction[];
   tests: TestExtraction[];
+  functions: FunctionRecord[];
 } {
+  // Text-based adapters (e.g. Lean4) set language to null and rely entirely on
+  // their extract() implementation — no tree-sitter parse step needed.
+  if (!adapter.language) {
+    if (adapter.extract) {
+      const result = adapter.extract(file, source, null as any);
+      return {
+        endpoints: result.endpoints,
+        models: result.models,
+        components: result.components,
+        tests: result.tests,
+        functions: result.functions ?? [],
+      };
+    }
+    return { endpoints: [], models: [], components: [], tests: [], functions: [] };
+  }
+
+  // tree-sitter native binding throws "Invalid argument" for very large files.
+  // Skip files over 1 MB to avoid silent crashes; they are rare in practice.
+  if (source.length > 1_000_000) {
+    return { endpoints: [], models: [], components: [], tests: [], functions: [] };
+  }
+
   const parser = new Parser();
   parser.setLanguage(adapter.language);
   const tree = parser.parse(source);
-  
+
   if (adapter.extract) {
-    return adapter.extract(file, source, tree.rootNode);
+    const result = adapter.extract(file, source, tree.rootNode);
+    return {
+      endpoints: result.endpoints,
+      models: result.models,
+      components: result.components,
+      tests: result.tests,
+      functions: result.functions ?? [],
+    };
   }
 
   const endpoints: EndpointExtraction[] = [];
@@ -85,5 +116,5 @@ export function runAdapter(
     }
   }
 
-  return { endpoints, models, components, tests };
+  return { endpoints, models, components, tests, functions: [] };
 }

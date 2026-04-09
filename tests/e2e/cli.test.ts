@@ -48,7 +48,7 @@ describe("CLI End-to-End", () => {
   beforeAll(async () => {
     await scaffold();
     execSync("npm run build", { cwd: PROJECT_ROOT, encoding: "utf8" });
-  });
+  }, 120_000); // tsc can take 30-60s — give it 2 minutes
   afterAll(teardown);
 
   it("`generate --ai-context` produces architecture-context.md", () => {

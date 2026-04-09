@@ -5,11 +5,95 @@ import type {
   EndpointExtraction,
   ModelExtraction,
   ComponentExtraction,
-  TestExtraction
+  TestExtraction,
+  FunctionRecord,
 } from "./types.js";
 
 function text(node: Parser.SyntaxNode | null | undefined): string {
   return node ? node.text : "";
+}
+
+// ── Function-level intelligence ───────────────────────────────────────────
+
+const CS_FUNC_QUERY = `
+  (method_declaration      name: (identifier) @name) @fn
+  (constructor_declaration name: (identifier) @name) @fn
+`;
+
+function walkBody(body: Parser.SyntaxNode, visitor: (n: Parser.SyntaxNode) => void): void {
+  const stack: Parser.SyntaxNode[] = [body];
+  while (stack.length > 0) {
+    const n = stack.pop()!;
+    visitor(n);
+    for (let i = n.namedChildCount - 1; i >= 0; i--) {
+      const c = n.namedChild(i);
+      if (c) stack.push(c);
+    }
+  }
+}
+
+function collectCSharpBodyIntel(
+  body: Parser.SyntaxNode
+): { stringLiterals: string[]; regexPatterns: string[]; calls: string[] } {
+  const strings = new Set<string>();
+  const calls = new Set<string>();
+
+  walkBody(body, (n) => {
+    if (n.type === "string_literal" || n.type === "verbatim_string_literal") {
+      const raw = n.text.replace(/^@?"/, "").replace(/"$/, "");
+      if (raw.length > 0 && raw.length < 300) strings.add(raw);
+    } else if (n.type === "interpolated_string_expression") {
+      const raw = n.text.replace(/^\$"/, "").replace(/"$/, "");
+      if (raw.length > 0 && raw.length < 300) strings.add(raw);
+    } else if (n.type === "invocation_expression") {
+      const fn = n.childForFieldName("function");
+      if (fn) calls.add(fn.text.split("\n")[0].trim());
+    }
+  });
+
+  return { stringLiterals: [...strings], regexPatterns: [], calls: [...calls] };
+}
+
+function extractCSharpFunctions(
+  language: any,
+  file: string,
+  root: Parser.SyntaxNode
+): FunctionRecord[] {
+  const records: FunctionRecord[] = [];
+  const query = new Parser.Query(language, CS_FUNC_QUERY);
+
+  for (const match of query.matches(root)) {
+    const fnNode = match.captures.find((c) => c.name === "fn")?.node;
+    const nameNode = match.captures.find((c) => c.name === "name")?.node;
+    if (!fnNode || !nameNode) continue;
+
+    const funcName = text(nameNode);
+
+    // async: scan direct children for modifier — no full-tree walk needed
+    let isAsync = false;
+    for (const child of fnNode.children) {
+      if (child.type === "modifier" && child.text === "async") { isAsync = true; break; }
+    }
+
+    const bodyNode = fnNode.childForFieldName("body");
+    const intel = bodyNode
+      ? collectCSharpBodyIntel(bodyNode)
+      : { stringLiterals: [], regexPatterns: [], calls: [] };
+
+    records.push({
+      id: `${file}#${funcName}:${fnNode.startPosition.row + 1}`,
+      name: funcName,
+      file,
+      lines: [fnNode.startPosition.row + 1, fnNode.endPosition.row + 1],
+      calls: intel.calls,
+      stringLiterals: intel.stringLiterals,
+      regexPatterns: intel.regexPatterns,
+      isAsync,
+      language: "csharp",
+    });
+  }
+
+  return records;
 }
 
 export const CSharpAdapter: SpecGuardAdapter = {
@@ -145,6 +229,7 @@ export const CSharpAdapter: SpecGuardAdapter = {
       }
     }
 
-    return { endpoints, models, components, tests };
+    const functions = extractCSharpFunctions(this.language, file, root);
+    return { endpoints, models, components, tests, functions };
   }
 };

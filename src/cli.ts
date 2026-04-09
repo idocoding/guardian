@@ -376,7 +376,21 @@ program
     });
   });
 
-program.parseAsync().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+program
+  .parseAsync()
+  .then(() => {
+    // Force exit after one-shot commands complete.
+    // Tree-sitter native bindings keep a libuv ref alive, preventing natural
+    // process exit. mcp-serve is excluded: it sets up readline and returns
+    // immediately (before any messages are processed), so calling process.exit()
+    // here would kill it before it processes any input. mcp-serve manages its
+    // own lifecycle via process.exit(0) inside rl.on("close").
+    const subCommand = process.argv[2];
+    if (subCommand !== "mcp-serve") {
+      process.exit(process.exitCode ?? 0);
+    }
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

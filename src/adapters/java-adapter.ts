@@ -5,11 +5,95 @@ import type {
   EndpointExtraction,
   ModelExtraction,
   ComponentExtraction,
-  TestExtraction
+  TestExtraction,
+  FunctionRecord,
 } from "./types.js";
 
 function text(node: Parser.SyntaxNode | null | undefined): string {
   return node ? node.text : "";
+}
+
+// ── Function-level intelligence ───────────────────────────────────────────
+
+const JAVA_FUNC_QUERY = `
+  (method_declaration      name: (identifier) @name) @fn
+  (constructor_declaration name: (identifier) @name) @fn
+`;
+
+function walkBody(body: Parser.SyntaxNode, visitor: (n: Parser.SyntaxNode) => void): void {
+  const stack: Parser.SyntaxNode[] = [body];
+  while (stack.length > 0) {
+    const n = stack.pop()!;
+    visitor(n);
+    for (let i = n.namedChildCount - 1; i >= 0; i--) {
+      const c = n.namedChild(i);
+      if (c) stack.push(c);
+    }
+  }
+}
+
+function collectJavaBodyIntel(
+  body: Parser.SyntaxNode
+): { stringLiterals: string[]; regexPatterns: string[]; calls: string[] } {
+  const strings = new Set<string>();
+  const calls = new Set<string>();
+
+  walkBody(body, (n) => {
+    if (n.type === "string_literal") {
+      const raw = n.text.replace(/^"/, "").replace(/"$/, "");
+      if (raw.length > 0 && raw.length < 300) strings.add(raw);
+    } else if (n.type === "text_block") {
+      const raw = n.text.replace(/^"""/, "").replace(/"""$/, "").trim();
+      if (raw.length > 0 && raw.length < 300) strings.add(raw);
+    } else if (n.type === "method_invocation") {
+      const nameNode = n.childForFieldName("name");
+      const objNode = n.childForFieldName("object");
+      if (nameNode) {
+        const call = objNode ? `${text(objNode)}.${text(nameNode)}` : text(nameNode);
+        calls.add(call.split("\n")[0].trim());
+      }
+    }
+  });
+
+  return { stringLiterals: [...strings], regexPatterns: [], calls: [...calls] };
+}
+
+function extractJavaFunctions(
+  language: any,
+  file: string,
+  root: Parser.SyntaxNode
+): FunctionRecord[] {
+  const records: FunctionRecord[] = [];
+  const query = new Parser.Query(language, JAVA_FUNC_QUERY);
+
+  for (const match of query.matches(root)) {
+    const fnNode = match.captures.find((c) => c.name === "fn")?.node;
+    const nameNode = match.captures.find((c) => c.name === "name")?.node;
+    if (!fnNode || !nameNode) continue;
+
+    const funcName = text(nameNode);
+    const bodyNode = fnNode.childForFieldName("body");
+    const intel = bodyNode
+      ? collectJavaBodyIntel(bodyNode)
+      : { stringLiterals: [], regexPatterns: [], calls: [] };
+
+    const typeNode = fnNode.childForFieldName("type");
+    const isAsync = /CompletableFuture|Mono|Flux|Future/.test(text(typeNode));
+
+    records.push({
+      id: `${file}#${funcName}:${fnNode.startPosition.row + 1}`,
+      name: funcName,
+      file,
+      lines: [fnNode.startPosition.row + 1, fnNode.endPosition.row + 1],
+      calls: intel.calls,
+      stringLiterals: intel.stringLiterals,
+      regexPatterns: intel.regexPatterns,
+      isAsync,
+      language: "java",
+    });
+  }
+
+  return records;
 }
 
 export const JavaAdapter: SpecGuardAdapter = {
@@ -136,6 +220,7 @@ export const JavaAdapter: SpecGuardAdapter = {
       }
     }
 
-    return { endpoints, models, components, tests };
+    const functions = extractJavaFunctions(this.language, file, root);
+    return { endpoints, models, components, tests, functions };
   }
 };

@@ -5,7 +5,8 @@ import type {
   EndpointExtraction,
   ModelExtraction,
   ComponentExtraction,
-  TestExtraction
+  TestExtraction,
+  FunctionRecord,
 } from "./types.js";
 
 // Utility to recursively find children of a certain type
@@ -16,6 +17,108 @@ function findChildren(node: Parser.SyntaxNode, type: string): Parser.SyntaxNode[
     results.push(...findChildren(child, type));
   }
   return results;
+}
+
+// ── Function-level intelligence helpers ──────────────────────────────────
+
+/** re.* functions whose first argument is a regex pattern string */
+const RE_FUNCS = new Set(["compile", "sub", "subn", "match", "search", "fullmatch", "findall", "finditer", "split"]);
+
+/**
+ * Collect string literals, regex patterns (strings passed to re.*), and call
+ * targets from a Python function body subtree.
+ */
+function collectPythonBodyIntel(
+  body: Parser.SyntaxNode,
+  getText: (n: Parser.SyntaxNode) => string
+): { stringLiterals: string[]; regexPatterns: string[]; calls: string[] } {
+  const strings = new Set<string>();
+  const regexes = new Set<string>();
+  const calls = new Set<string>();
+
+  function walk(n: Parser.SyntaxNode): void {
+    if (n.type === "string") {
+      // Python string: "text", 'text', """text""", r"pattern"
+      const raw = getText(n);
+      // Strip leading r/b/f/u prefix and quote chars
+      const stripped = raw.replace(/^[rRbBuUfF]*/u, "").replace(/^'''|^"""|^'|^"/u, "").replace(/'''$|"""$|'$|"$/u, "");
+      if (stripped.length > 0 && stripped.length < 300) {
+        strings.add(stripped);
+
+        // Is this string the first argument to a re.* call?
+        const parent = n.parent;
+        if (parent?.type === "argument_list") {
+          const callNode = parent.parent;
+          if (callNode?.type === "call") {
+            const funcNode = callNode.childForFieldName("function");
+            if (funcNode) {
+              const fnText = getText(funcNode);
+              // re.sub, re.compile, re.match, …
+              const simple = fnText.split(".").pop() ?? "";
+              if (fnText.startsWith("re.") && RE_FUNCS.has(simple)) {
+                regexes.add(stripped);
+              }
+            }
+          }
+        }
+      }
+    } else if (n.type === "call") {
+      const funcNode = n.childForFieldName("function");
+      if (funcNode) {
+        calls.add(getText(funcNode).trim());
+      }
+    }
+    for (const child of n.namedChildren) walk(child);
+  }
+
+  walk(body);
+  return {
+    stringLiterals: [...strings],
+    regexPatterns: [...regexes],
+    calls: [...calls],
+  };
+}
+
+/**
+ * Recursively extract FunctionRecord entries from a Python AST node.
+ * Handles top-level functions, methods inside classes, and nested functions.
+ */
+function extractPyFunctions(
+  file: string,
+  source: string,
+  node: Parser.SyntaxNode
+): FunctionRecord[] {
+  const records: FunctionRecord[] = [];
+  const getText = (n: Parser.SyntaxNode) => source.substring(n.startIndex, n.endIndex);
+
+  function process(n: Parser.SyntaxNode): void {
+    if (n.type === "function_definition") {
+      const nameN = n.childForFieldName("name");
+      const bodyN = n.childForFieldName("body");
+      if (nameN && bodyN) {
+        const funcName = getText(nameN);
+        // Detect async: check if "async" keyword precedes the def
+        const srcBefore = source.substring(n.startIndex, nameN.startIndex);
+        const isAsync = /\basync\b/.test(srcBefore);
+        const intel = collectPythonBodyIntel(bodyN, getText);
+        records.push({
+          id: `${file}#${funcName}:${n.startPosition.row + 1}`,
+          name: funcName,
+          file,
+          lines: [n.startPosition.row + 1, n.endPosition.row + 1],
+          calls: intel.calls,
+          stringLiterals: intel.stringLiterals,
+          regexPatterns: intel.regexPatterns,
+          isAsync,
+          language: "python",
+        });
+      }
+    }
+    for (const child of n.namedChildren) process(child);
+  }
+
+  process(node);
+  return records;
 }
 
 export const PythonAdapter: SpecGuardAdapter = {
@@ -138,6 +241,7 @@ export const PythonAdapter: SpecGuardAdapter = {
     }
 
     // 2. Process Models
+
     const mdQuery = new Parser.Query(this.language as any, this.queries.models!);
     const mdMatches = mdQuery.matches(root);
 
@@ -194,6 +298,8 @@ export const PythonAdapter: SpecGuardAdapter = {
       });
     }
 
-    return { endpoints, models, components, tests };
+    const functions = extractPyFunctions(file, source, root);
+
+    return { endpoints, models, components, tests, functions };
   }
 };

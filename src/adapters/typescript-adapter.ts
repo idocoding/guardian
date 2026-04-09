@@ -1,7 +1,7 @@
 import TypeScript from "tree-sitter-typescript";
 import Parser from "tree-sitter";
 import path from "node:path";
-import type { SpecGuardAdapter, EndpointExtraction, ModelExtraction, ComponentExtraction } from "./types.js";
+import type { SpecGuardAdapter, EndpointExtraction, ModelExtraction, ComponentExtraction, FunctionRecord } from "./types.js";
 
 // Utility to recursively find children of a certain type
 function findChildren(node: Parser.SyntaxNode, type: string): Parser.SyntaxNode[] {
@@ -11,6 +11,121 @@ function findChildren(node: Parser.SyntaxNode, type: string): Parser.SyntaxNode[
     results.push(...findChildren(child, type));
   }
   return results;
+}
+
+// ── Function-level intelligence helpers ──────────────────────────────────
+
+/** Walk all descendants depth-first. */
+function* walkAll(node: Parser.SyntaxNode): Generator<Parser.SyntaxNode> {
+  yield node;
+  for (const child of node.namedChildren) yield* walkAll(child);
+}
+
+/**
+ * Collect string literals, regex patterns, and call targets from a subtree.
+ * Scoped to the function body so we don't bleed into nested function records.
+ */
+function collectBodyIntel(
+  body: Parser.SyntaxNode,
+  getText: (n: Parser.SyntaxNode) => string
+): { stringLiterals: string[]; regexPatterns: string[]; calls: string[] } {
+  const strings = new Set<string>();
+  const regexes = new Set<string>();
+  const calls = new Set<string>();
+
+  for (const n of walkAll(body)) {
+    if (n.type === "string") {
+      const frag = n.namedChildren.find((c) => c.type === "string_fragment");
+      if (frag) {
+        const val = getText(frag);
+        if (val.length > 0 && val.length < 300) strings.add(val);
+      }
+    } else if (n.type === "template_string") {
+      // Strip backticks; include template string content
+      const raw = getText(n).slice(1, -1);
+      if (raw.length > 0 && raw.length < 300) strings.add(raw);
+    } else if (n.type === "regex") {
+      const raw = getText(n);
+      // /pattern/flags → extract pattern
+      const m = raw.match(/^\/(.+)\/[gimsuy]*$/s);
+      if (m) regexes.add(m[1]);
+    } else if (n.type === "call_expression") {
+      const fn = n.childForFieldName("function");
+      if (fn) {
+        const name = getText(fn).split("\n")[0].trim();
+        calls.add(name);
+      }
+    }
+  }
+
+  return {
+    stringLiterals: [...strings],
+    regexPatterns: [...regexes],
+    calls: [...calls],
+  };
+}
+
+/**
+ * Recursively extract FunctionRecord entries from a TypeScript/TSX AST node.
+ * Handles: function declarations, method definitions, arrow functions assigned
+ * to variables (const foo = () => {}), and class method definitions.
+ */
+function extractTsFunctions(
+  file: string,
+  source: string,
+  node: Parser.SyntaxNode
+): FunctionRecord[] {
+  const records: FunctionRecord[] = [];
+  const getText = (n: Parser.SyntaxNode) => source.substring(n.startIndex, n.endIndex);
+
+  function process(n: Parser.SyntaxNode): void {
+    let funcName: string | null = null;
+    let bodyNode: Parser.SyntaxNode | null = null;
+    let isAsync = false;
+
+    if (n.type === "function_declaration") {
+      const nameN = n.childForFieldName("name");
+      if (nameN) funcName = getText(nameN);
+      bodyNode = n.childForFieldName("body");
+      isAsync = n.children.some((c) => c.type === "async");
+    } else if (n.type === "method_definition") {
+      const nameN = n.childForFieldName("name");
+      if (nameN) funcName = getText(nameN);
+      bodyNode = n.childForFieldName("body");
+      isAsync = n.children.some((c) => c.type === "async");
+    } else if (n.type === "variable_declarator") {
+      const valN = n.childForFieldName("value");
+      if (valN && (valN.type === "arrow_function" || valN.type === "function")) {
+        const nameN = n.childForFieldName("name");
+        if (nameN) funcName = getText(nameN);
+        bodyNode = valN.childForFieldName("body") ?? valN;
+        isAsync = valN.children.some((c) => c.type === "async");
+      }
+    }
+
+    if (funcName && bodyNode) {
+      const intel = collectBodyIntel(bodyNode, getText);
+      records.push({
+        id: `${file}#${funcName}:${n.startPosition.row + 1}`,
+        name: funcName,
+        file,
+        lines: [n.startPosition.row + 1, n.endPosition.row + 1],
+        calls: intel.calls,
+        stringLiterals: intel.stringLiterals,
+        regexPatterns: intel.regexPatterns,
+        isAsync,
+        language: "typescript",
+      });
+    }
+
+    // Recurse into all children (nested functions become their own records)
+    for (const child of n.namedChildren) {
+      process(child);
+    }
+  }
+
+  process(node);
+  return records;
 }
 
 export const TypeScriptAdapter: SpecGuardAdapter = {
@@ -183,6 +298,8 @@ export const TypeScriptAdapter: SpecGuardAdapter = {
       }
     }
 
-    return { endpoints, models, components, tests };
+    const functions = extractTsFunctions(file, source, root);
+
+    return { endpoints, models, components, tests, functions };
   }
 };
