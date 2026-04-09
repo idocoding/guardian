@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+import { createRequire } from "node:module";
+const _require = createRequire(import.meta.url);
+const { version } = _require("../package.json") as { version: string };
+
 import { Command } from "commander";
 import { runExtract } from "./commands/extract.js";
 import { runDrift } from "./commands/drift.js";
@@ -27,7 +31,7 @@ const program = new Command();
 program
   .name("guardian")
   .description("Guardian — Architectural intelligence for codebases (by Toolbaux)")
-  .version("0.1.0");
+  .version(version);
 
 program
   .command("generate")
