@@ -12,6 +12,7 @@ import fs from "node:fs";
 
 const SPECS_DIR = path.resolve(__dirname, "../test-fixtures/specs");
 const INTEL_PATH = path.join(SPECS_DIR, "machine", "codebase-intelligence.json");
+const FUNC_INTEL_PATH = path.join(SPECS_DIR, "machine", "function-intelligence.json");
 
 // Minimal codebase intelligence for testing
 const MOCK_INTEL = {
@@ -65,6 +66,81 @@ const MOCK_INTEL = {
   pattern_registry: { patterns: [] },
 };
 
+// Minimal function intelligence fixture
+const MOCK_FUNC_INTEL = {
+  version: "0.1",
+  generated_at: new Date().toISOString(),
+  total_functions: 4,
+  functions: [
+    {
+      id: "backend/api/users.py#create_user:10",
+      name: "create_user",
+      file: "backend/api/users.py",
+      lines: [10, 25],
+      calls: ["db.execute", "uuid.uuid4"],
+      stringLiterals: ["user created successfully", "invalid email"],
+      regexPatterns: ["^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$"],
+      isAsync: true,
+      language: "python",
+    },
+    {
+      id: "backend/api/users.py#list_users:30",
+      name: "list_users",
+      file: "backend/api/users.py",
+      lines: [30, 45],
+      calls: ["db.fetch"],
+      stringLiterals: [],
+      regexPatterns: [],
+      isAsync: false,
+      language: "python",
+    },
+    {
+      id: "backend/main.py#health:5",
+      name: "health",
+      file: "backend/main.py",
+      lines: [5, 8],
+      calls: [],
+      stringLiterals: ["ok"],
+      regexPatterns: [],
+      isAsync: false,
+      language: "python",
+    },
+    {
+      id: "backend/models.py#validate_email:50",
+      name: "validate_email",
+      file: "backend/models.py",
+      lines: [50, 60],
+      calls: ["re.match"],
+      stringLiterals: ["invalid email"],
+      regexPatterns: ["^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$"],
+      isAsync: false,
+      language: "python",
+    },
+  ],
+  call_graph: {
+    create_user: { calls: ["db.execute", "uuid.uuid4"], called_by: [] },
+    list_users: { calls: ["db.fetch"], called_by: [] },
+    health: { calls: [], called_by: [] },
+    validate_email: { calls: ["re.match"], called_by: [] },
+  },
+  literal_index: {
+    "user created successfully": [{ file: "backend/api/users.py", function: "create_user", line: 10 }],
+    "invalid email": [
+      { file: "backend/api/users.py", function: "create_user", line: 10 },
+      { file: "backend/models.py", function: "validate_email", line: 50 },
+    ],
+    "ok": [{ file: "backend/main.py", function: "health", line: 5 }],
+    "user": [
+      { file: "backend/api/users.py", function: "create_user", line: 10 },
+      { file: "backend/api/users.py", function: "list_users", line: 30 },
+    ],
+    "email": [
+      { file: "backend/api/users.py", function: "create_user", line: 10 },
+      { file: "backend/models.py", function: "validate_email", line: 50 },
+    ],
+  },
+};
+
 function sendToMcp(messages: object[]): Promise<object[]> {
   return new Promise((resolve, reject) => {
     const child = spawn("node", ["dist/cli.js", "mcp-serve", "--specs", SPECS_DIR], {
@@ -104,9 +180,9 @@ function getResult(responses: any[], id: number): any {
 }
 
 beforeAll(() => {
-  // Write mock intelligence
   fs.mkdirSync(path.join(SPECS_DIR, "machine"), { recursive: true });
   fs.writeFileSync(INTEL_PATH, JSON.stringify(MOCK_INTEL));
+  fs.writeFileSync(FUNC_INTEL_PATH, JSON.stringify(MOCK_FUNC_INTEL));
 });
 
 describe("MCP Tools", () => {
@@ -222,6 +298,54 @@ describe("MCP Tools", () => {
     // Both should return identical data
     expect(r1.p).toBe(r2.p);
     expect(r1.ep).toBe(r2.ep);
+  });
+
+  it("guardian_search finds functions by literal index key", async () => {
+    const responses = await sendToMcp([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { capabilities: {} } },
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "guardian_search", arguments: { query: "invalid email" } } },
+    ]);
+    const result = getResult(responses, 2);
+    expect(result.fns).toBeDefined();
+    expect(result.fns.length).toBeGreaterThan(0);
+    // Should find create_user and validate_email via literal_index
+    const names = result.fns.map((h: string) => h.split(" ")[0]);
+    expect(names).toContain("create_user");
+    expect(names).toContain("validate_email");
+  });
+
+  it("guardian_search finds functions by name", async () => {
+    const responses = await sendToMcp([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { capabilities: {} } },
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "guardian_search", arguments: { query: "validate" } } },
+    ]);
+    const result = getResult(responses, 2);
+    expect(result.fns).toBeDefined();
+    const names = result.fns.map((h: string) => h.split(" ")[0]);
+    expect(names).toContain("validate_email");
+  });
+
+  it("guardian_search returns no fns key when no function matches", async () => {
+    const responses = await sendToMcp([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { capabilities: {} } },
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "guardian_search", arguments: { query: "zzznomatch999" } } },
+    ]);
+    const result = getResult(responses, 2);
+    // fns key should be absent when there are no hits (compact output)
+    expect(result.fns).toBeUndefined();
+  });
+
+  it("guardian_search function hits include file and line", async () => {
+    const responses = await sendToMcp([
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { capabilities: {} } },
+      { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "guardian_search", arguments: { query: "email" } } },
+    ]);
+    const result = getResult(responses, 2);
+    expect(result.fns).toBeDefined();
+    // Each hit should be "name [file:line] ..." format
+    for (const hit of result.fns) {
+      expect(hit).toMatch(/\[.+:\d+\]/);
+    }
   });
 
   it("responses are compact JSON not pretty-printed", async () => {

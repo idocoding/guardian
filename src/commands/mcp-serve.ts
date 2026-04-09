@@ -142,6 +142,26 @@ async function loadIntel(): Promise<any> {
   return intel;
 }
 
+// ── Function intelligence loader ──
+
+let funcIntel: any = null;
+let funcIntelPath = "";
+let funcIntelLoadTime = 0;
+
+async function loadFuncIntel(): Promise<any> {
+  if (!funcIntelPath) return null;
+  const now = Date.now();
+  if (funcIntel && now - funcIntelLoadTime < 5000) return funcIntel;
+  try {
+    const raw = await fs.readFile(funcIntelPath, "utf8");
+    funcIntel = JSON.parse(raw);
+    funcIntelLoadTime = now;
+  } catch {
+    // File may not exist yet — not an error
+  }
+  return funcIntel;
+}
+
 // ── Helpers ──
 
 const SKIP_SERVICES = new Set(["str", "dict", "int", "len", "float", "max", "join", "getattr", "lower", "open", "params.append", "updates.append"]);
@@ -388,11 +408,38 @@ async function search(args: { query: string }): Promise<string> {
     p.api_calls?.some((c: string) => c.toLowerCase().includes(q))
   ).slice(0, 5).map((p: any) => `${p.path} → ${p.component}`);
 
+  // Functions: search literal_index (tactic:simp, sorry, string patterns) + function names
+  const fnHits: string[] = [];
+  const fi = await loadFuncIntel();
+  if (fi) {
+    // Literal index: exact key match + partial key match
+    const litIndex: Record<string, Array<{ file: string; function: string; line: number }>> =
+      fi.literal_index ?? {};
+    for (const [key, hits] of Object.entries(litIndex)) {
+      if ((key as string).includes(q)) {
+        for (const h of (hits as any[]).slice(0, 3)) {
+          fnHits.push(`${h.function} [${h.file}:${h.line}] (lit:${key})`);
+        }
+      }
+      if (fnHits.length >= 10) break;
+    }
+    // Function names: match by name
+    if (fnHits.length < 10) {
+      for (const fn of (fi.functions ?? []) as any[]) {
+        if (fn.name?.toLowerCase().includes(q)) {
+          fnHits.push(`${fn.name} [${fn.file}:${fn.lines?.[0]}]`);
+          if (fnHits.length >= 10) break;
+        }
+      }
+    }
+  }
+
   return compact({
     ep: eps, mod: models, m: mods,
     exports: exports.slice(0, 10),
     files: files.slice(0, 8),
     enums, tasks, pages,
+    ...(fnHits.length > 0 ? { fns: fnHits } : {}),
   });
 }
 
@@ -576,9 +623,11 @@ export async function runMcpServe(options: McpServeOptions): Promise<void> {
   const specsDir = path.resolve(options.specs);
   const quiet = options.quiet ?? false;
   intelPath = path.join(specsDir, "machine", "codebase-intelligence.json");
+  funcIntelPath = path.join(specsDir, "machine", "function-intelligence.json");
 
   // Pre-load intelligence
   await loadIntel();
+  await loadFuncIntel();
 
   // Log to stderr (stdout is for MCP protocol)
   if (!quiet) {
