@@ -238,10 +238,7 @@ export async function extractProject(
   // Generate Function Intelligence — call graph, literal index across all languages.
   // Runs as an additive second pass; never modifies the architecture snapshot.
   try {
-    const allRoots = (architecture.project.roots ?? [projectRoot]).map((r) =>
-      path.isAbsolute(r) ? r : path.join(projectRoot, r)
-    );
-    const funcIntel = await buildFunctionIntelligenceFromRoots(allRoots, config);
+    const funcIntel = await buildFunctionIntelligenceFromRoots([projectRoot], config, projectRoot);
     await writeFunctionIntelligence(layout.machineDir, funcIntel);
   } catch (err) {
     // Non-fatal — function intel is additive; don't block the main extract
@@ -500,30 +497,6 @@ function mergeFrontendAnalyses(results: FrontendAnalysis[], _roots: string[], _w
   };
 }
 
-function findCommonRoot(paths: string[]): string {
-  if (paths.length === 0) {
-    return process.cwd();
-  }
-
-  const splitPaths = paths.map((entry) => path.resolve(entry).split(path.sep));
-  const minLength = Math.min(...splitPaths.map((parts) => parts.length));
-  const shared: string[] = [];
-
-  for (let i = 0; i < minLength; i += 1) {
-    const segment = splitPaths[0][i];
-    if (splitPaths.every((parts) => parts[i] === segment)) {
-      shared.push(segment);
-    } else {
-      break;
-    }
-  }
-
-  if (shared.length === 0) {
-    return path.parse(paths[0]).root;
-  }
-
-  return shared.join(path.sep);
-}
 
 async function loadPreviousSnapshots(machineDir: string, rootDir?: string): Promise<{
   architecture?: ArchitectureSnapshot;

@@ -412,33 +412,39 @@ function activate(context) {
     try {
       fs.mkdirSync(hooksDir, { recursive: true });
 
-      // Write the hook script
-      if (!fs.existsSync(hookScriptPath)) {
-        const hookScript = [
-          "#!/bin/bash",
-          "# Guardian MCP-first hook — ensures AI tools use Guardian MCP before reading source files.",
-          "# Installed by: Guardian VS Code extension",
-          "",
-          "INPUT=$(cat)",
-          'TOOL_NAME=$(echo "$INPUT" | jq -r \'.tool_name // empty\')',
-          "",
-          "cat >&2 <<BLOCK",
-          "BLOCKED: Use Guardian MCP tools before reading source files.",
-          "",
-          "Use these MCP tools first:",
-          "  - guardian_orient  — get codebase overview",
-          "  - guardian_search  — find features by keyword",
-          "  - guardian_context — deep dive into a specific area",
-          "",
-          "Then you can read individual files as needed.",
-          "BLOCK",
-          "",
-          "exit 2",
-          ""
-        ].join("\n");
-        fs.writeFileSync(hookScriptPath, hookScript, { mode: 0o755 });
-        output.appendLine("[Guardian] Created Claude Code MCP-first hook");
-      }
+      // Write the hook script (always overwrite to pick up extension updates)
+      const HOOK_VERSION = "v2";
+      const hookScript = [
+        "#!/bin/bash",
+        `# Guardian MCP-first hook ${HOOK_VERSION} — nudges AI to use Guardian before reading source files.`,
+        "# Installed by: Guardian VS Code extension. Do not edit — regenerated on each guardian run.",
+        "",
+        "# If guardian MCP was called in the last 5 minutes, allow reads through.",
+        "FLAG=/tmp/guardian-last-call",
+        'if [ -f "$FLAG" ]; then',
+        "  AGE=$(( $(date +%s) - $(cat \"$FLAG\") ))",
+        '  if [ "$AGE" -lt 300 ]; then',
+        "    exit 0",
+        "  fi",
+        "fi",
+        "",
+        "# Guardian not called recently — remind and block.",
+        "cat >&2 <<'BLOCK'",
+        "Guardian: use MCP tools before reading source files.",
+        "",
+        "Call one of these first:",
+        "  guardian_search(query)  — find files/endpoints/symbols by keyword",
+        "  guardian_orient()       — get codebase overview",
+        "  guardian_context(target) — deps for a specific file or endpoint",
+        "",
+        "Then read individual files as needed.",
+        "BLOCK",
+        "",
+        "exit 2",
+        ""
+      ].join("\n");
+      fs.writeFileSync(hookScriptPath, hookScript, { mode: 0o755 });
+      output.appendLine("[Guardian] Installed Claude Code MCP-first hook");
 
       // Write or merge .claude/settings.json
       let settings = {};
@@ -517,7 +523,7 @@ function activate(context) {
 
     // Run extract + generate in sequence
     const specsOutput = path.join(workspaceRoot, ".specs");
-    const extractArgs = ["extract", "--output", specsOutput];
+    const extractArgs = ["extract", "--output", specsOutput, "--backend", "sqlite"];
     if (configAbs) extractArgs.push("--config", configAbs);
     const extractCode = await runSpecguard(commandPath, extractArgs, workspaceRoot, false, output);
 

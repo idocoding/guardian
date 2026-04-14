@@ -21,6 +21,7 @@ import yaml from "js-yaml";
 import type { ArchitectureSnapshot, UxSnapshot } from "./types.js";
 import { buildPatternRegistry, type PatternRegistry } from "./pattern-registry.js";
 import { resolveMachineInputDir } from "../output-layout.js";
+import type { SpecsStore } from "../db/specs-store.js";
 
 export type ApiRegistryEntry = {
   method: string;
@@ -279,8 +280,11 @@ function buildEndpointPatternMap(
   return result;
 }
 
+// ── File-based IO (original implementation — unchanged) ────────────────────
+
 /**
- * Load snapshots and build CodebaseIntelligence, then write to disk.
+ * Load snapshots and write codebase-intelligence.json to disk.
+ * This is the original file-based implementation, kept intact.
  */
 export async function writeCodebaseIntelligence(
   specsDir: string,
@@ -295,7 +299,6 @@ export async function writeCodebaseIntelligence(
 
   const architecture = yaml.load(archRaw) as ArchitectureSnapshot;
   const ux = yaml.load(uxRaw) as UxSnapshot;
-
   const intel = buildCodebaseIntelligence(architecture, ux);
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
@@ -303,11 +306,49 @@ export async function writeCodebaseIntelligence(
 }
 
 /**
- * Load an existing codebase-intelligence.json from disk.
+ * Load an existing codebase-intelligence.json from a file path.
+ * Original file-based implementation, kept intact.
  */
 export async function loadCodebaseIntelligence(
   intelPath: string
 ): Promise<CodebaseIntelligence> {
   const raw = await fs.readFile(intelPath, "utf8");
   return JSON.parse(raw) as CodebaseIntelligence;
+}
+
+// ── Store-based IO (new — works with both FileSpecsStore and SqliteSpecsStore) ─
+
+/**
+ * Build CodebaseIntelligence and write it via a SpecsStore.
+ * Use this when operating on a guardian.db or when you already have a store open.
+ */
+export async function writeCodebaseIntelligenceViaStore(
+  store: SpecsStore
+): Promise<void> {
+  const archEntry = await store.readSpec("architecture.snapshot");
+  const uxEntry   = await store.readSpec("ux.snapshot");
+
+  if (!archEntry || !uxEntry) {
+    throw new Error(
+      "architecture.snapshot or ux.snapshot not found in store. Run `guardian extract` first."
+    );
+  }
+
+  const architecture = yaml.load(archEntry.content) as ArchitectureSnapshot;
+  const ux           = yaml.load(uxEntry.content)   as UxSnapshot;
+  const intel        = buildCodebaseIntelligence(architecture, ux);
+
+  await store.writeSpec("codebase-intelligence", JSON.stringify(intel, null, 2), "json");
+}
+
+/**
+ * Load CodebaseIntelligence from a SpecsStore.
+ * Returns null if not yet built.
+ */
+export async function loadCodebaseIntelligenceViaStore(
+  store: SpecsStore
+): Promise<CodebaseIntelligence | null> {
+  const entry = await store.readSpec("codebase-intelligence");
+  if (!entry) return null;
+  return JSON.parse(entry.content) as CodebaseIntelligence;
 }

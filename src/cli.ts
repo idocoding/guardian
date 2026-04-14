@@ -17,13 +17,14 @@ import { runContext } from "./commands/context.js";
 import { runGenerate } from "./commands/generate.js";
 import { runVerifyDrift } from "./commands/verify-drift.js";
 import { runAnalyzeDepth } from "./commands/analyze-depth.js";
-import { runIntel } from "./commands/intel.js";
 import { runFeatureContext } from "./commands/feature-context.js";
 import { runDocGenerate } from "./commands/doc-generate.js";
 import { runDiscrepancy } from "./commands/discrepancy.js";
 import { runDocHtml } from "./commands/doc-html.js";
 import { runInit } from "./commands/init.js";
+import { runIntel } from "./commands/intel.js";
 import { runMcpServe } from "./commands/mcp-serve.js";
+import { runBenchmarkCommand } from "./commands/benchmark.js";
 import { DEFAULT_SPECS_DIR } from "./config.js";
 
 const program = new Command();
@@ -64,18 +65,20 @@ program
   .option("--backend-root <path>", "Path to backend root")
   .option("--frontend-root <path>", "Path to frontend root")
   .option("--output <path>", "Output directory", DEFAULT_SPECS_DIR)
-  .option("--include-file-graph", "Include file-level dependency graph", false)
+  .option("--no-file-graph", "Exclude file-level dependency graph")
   .option("--config <path>", "Path to guardian.config.json")
   .option("--docs-mode <mode>", "Docs mode (lean|full)")
+  .option("--backend <backend>", "Storage backend: 'file' (default) or 'sqlite' (also builds guardian.db + FTS index)")
   .action(async (projectRoot, options) => {
     await runExtract({
       projectRoot,
       backendRoot: options.backendRoot,
       frontendRoot: options.frontendRoot,
       output: options.output ?? DEFAULT_SPECS_DIR,
-      includeFileGraph: options.includeFileGraph ?? false,
+      includeFileGraph: options.fileGraph !== false,
       configPath: options.config,
-      docsMode: options.docsMode
+      docsMode: options.docsMode,
+      backend: options.backend,
     });
   });
 
@@ -223,20 +226,31 @@ program
 
 program
   .command("search")
-  .description("Search existing snapshots for models, endpoints, components, modules, and tasks")
+  .description("Search snapshots and intelligence files. Use --query for semantic search or a mode flag for targeted lookups.")
   .option("--input <path>", "Snapshot output directory", DEFAULT_SPECS_DIR)
-  .requiredOption("--query <text>", "Search query")
+  .option("--query <text>", "Semantic search query")
   .option("--output <path>", "Write search results to a file")
-  .option(
-    "--types <items>",
-    "Comma-separated filters: models,endpoints,components,modules,tasks"
-  )
+  .option("--types <items>", "Comma-separated filters: models,endpoints,components,modules,tasks")
+  .option("--verbose", "Show full grouped output instead of compact file-first format")
+  .option("--format <fmt>", "Output format for --query: text (default) or json (categorical)")
+  .option("--orient", "Return architecture-context.md as compact JSON (project map)")
+  .option("--file <path>", "Return context for a file path or endpoint (e.g. 'POST /api/auth/login')")
+  .option("--model <name>", "Return model fields, relationships, and usage (e.g. 'User')")
+  .option("--impact <path>", "Return impact analysis: what breaks if you change this file")
+  .option("--backend <backend>", "Storage backend: 'file' (default linear scan) or 'sqlite' (FTS5/BM25)")
   .action(async (options) => {
     await runSearch({
       input: options.input ?? DEFAULT_SPECS_DIR,
       query: options.query,
       output: options.output,
-      types: options.types ? [options.types] : undefined
+      types: options.types ? [options.types] : undefined,
+      verbose: options.verbose ?? false,
+      format: options.format,
+      orient: options.orient ?? false,
+      file: options.file,
+      model: options.model,
+      impact: options.impact,
+      backend: options.backend,
     });
   });
 
@@ -282,13 +296,16 @@ program
 
 program
   .command("intel")
-  .description("Build codebase-intelligence.json from existing snapshots")
+  .description("[deprecated] Use `guardian extract` instead")
   .option("--specs <dir>", "Snapshot output directory", DEFAULT_SPECS_DIR)
-  .option("--output <path>", "Output path for codebase-intelligence.json")
+  .option("--output <path>", "Output path for codebase-intelligence.json (file backend only)")
+  .option("--backend <backend>", "Storage backend: 'file' (default) or 'sqlite'")
   .action(async (options) => {
+    console.warn("⚠ `guardian intel` is deprecated — use `guardian extract` instead.");
     await runIntel({
       specs: options.specs,
-      output: options.output
+      output: options.output,
+      backend: options.backend,
     });
   });
 
@@ -358,6 +375,7 @@ program
   .option("--frontend-root <path>", "Path to frontend root")
   .option("--output <path>", "Output directory", DEFAULT_SPECS_DIR)
   .option("--skip-hook", "Skip pre-commit hook installation", false)
+  .option("--backend <backend>", "Storage backend: 'file' (default) or 'sqlite' (builds guardian.db + FTS index)")
   .action(async (projectRoot, options) => {
     await runInit({
       projectRoot,
@@ -365,6 +383,29 @@ program
       frontendRoot: options.frontendRoot,
       output: options.output,
       skipHook: options.skipHook ?? false,
+      backend: options.backend,
+    });
+  });
+
+program
+  .command("benchmark")
+  .description("Run Guardian-Bench offline evaluation suite (4 metrics, no LLM required)")
+  .requiredOption("--tasks <file>", "Path to JSONL tasks file")
+  .option("--specs <dir>", "Specs directory override for all tasks")
+  .option("--repo-dir <dir>", "Repo root directory override for all tasks")
+  .option("--output <path>", "Write report to file (in addition to stdout)")
+  .option("--format <fmt>", "Output format: text, json, markdown, csv (default: text)", "text")
+  .option("--k <n>", "k for precision/recall (default: 5)", "5")
+  .option("--concurrency <n>", "Max parallel tasks (default: 4)", "4")
+  .action(async (options) => {
+    await runBenchmarkCommand({
+      tasks: options.tasks,
+      specs: options.specs,
+      repoDir: options.repoDir,
+      output: options.output,
+      format: options.format,
+      k: options.k,
+      concurrency: options.concurrency,
     });
   });
 

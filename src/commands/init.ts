@@ -22,6 +22,8 @@ export type InitOptions = {
   frontendRoot?: string;
   output?: string;
   skipHook?: boolean;
+  /** Storage backend — "sqlite" builds guardian.db + FTS index during init */
+  backend?: "file" | "sqlite";
 };
 
 const DEFAULT_CONFIG = {
@@ -179,6 +181,7 @@ export async function runInit(options: InitOptions): Promise<void> {
       frontendRoot: options.frontendRoot,
       output: specsDir,
       includeFileGraph: true,
+      backend: options.backend,
     });
 
     const { runGenerate } = await import("./generate.js");

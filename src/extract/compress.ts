@@ -59,6 +59,7 @@ export type DriftHeatmapEntry = {
   score: number;
   components: {
     degree: number;
+    pagerank: number;
     cross_layer_ratio: number;
     cycle: number;
   };
@@ -476,6 +477,7 @@ function buildHeatmapFromGraph(
   }
 
   const cycleNodes = findCycleNodes(nodes, adjacency, reverse);
+  const pageRank = computePageRank(nodes, adjacency, reverse);
   const degreeValues = nodes.map(
     (node) => (outbound.get(node) ?? 0) + (inbound.get(node) ?? 0)
   );
@@ -495,16 +497,23 @@ function buildHeatmapFromGraph(
     const out = outbound.get(node) ?? 0;
     const crossRatio = out === 0 ? 0 : crossOut / out;
     const cycleFlag = cycleNodes.has(node) ? 1 : 0;
+    const pr = pageRank.get(node) ?? 0;
+    // PageRank (40%) — importance by what depends on this node
+    // Degree   (30%) — raw connectivity (fallback signal)
+    // Cross-layer (20%) — architectural violation risk
+    // Cycle    (10%) — circular dependency penalty
     const score =
-      0.5 * (degree / maxDegree) +
-      0.3 * (crossRatio / maxCrossRatio) +
-      0.2 * cycleFlag;
+      0.4 * pr +
+      0.3 * (degree / maxDegree) +
+      0.2 * (crossRatio / maxCrossRatio) +
+      0.1 * cycleFlag;
     return {
       id: node,
       layer: nodeLayers.get(node) ?? "unknown",
       score: round(score, 4),
       components: {
         degree,
+        pagerank: round(pr, 4),
         cross_layer_ratio: round(crossRatio, 4),
         cycle: cycleFlag
       }
@@ -537,6 +546,72 @@ function resolveDomainForModule(
     }
   }
   return null;
+}
+
+/**
+ * Iterative PageRank over a directed graph.
+ * Returns a map of node → normalized score in [0, 1].
+ *
+ * Semantics: a node is important if many important nodes import/depend on it.
+ * Damping factor α=0.85 (web-standard). Converges in ~20 iterations for
+ * codebases with <10K files.
+ *
+ * Edge direction follows dependency arrows (A imports B → edge A→B).
+ * Rank flows *backward*: B gains rank because A depends on it, meaning
+ * files that many other files rely on get high scores — exactly what we
+ * want to surface in AI context.
+ */
+function computePageRank(
+  nodes: string[],
+  adjacency: Map<string, string[]>,   // forward edges (importer → imported)
+  reverse: Map<string, string[]>       // backward edges (imported → importers)
+): Map<string, number> {
+  const N = nodes.length;
+  if (N === 0) return new Map();
+
+  const DAMPING = 0.85;
+  const ITERATIONS = 30;
+  const BASE = (1 - DAMPING) / N;
+
+  // Initialize uniform rank
+  const rank = new Map<string, number>();
+  for (const node of nodes) rank.set(node, 1 / N);
+
+  // Precompute out-degrees (how many nodes each node imports)
+  const outDeg = new Map<string, number>();
+  for (const node of nodes) outDeg.set(node, (adjacency.get(node) ?? []).length);
+
+  // Dangling nodes (no outgoing edges) distribute rank uniformly
+  for (let iter = 0; iter < ITERATIONS; iter++) {
+    const next = new Map<string, number>();
+
+    // Dangling mass: sum of ranks of sink nodes spread across all nodes
+    let danglingMass = 0;
+    for (const node of nodes) {
+      if ((outDeg.get(node) ?? 0) === 0) {
+        danglingMass += (rank.get(node) ?? 0);
+      }
+    }
+    const danglingContrib = DAMPING * danglingMass / N;
+
+    for (const node of nodes) {
+      let incoming = 0;
+      for (const importer of (reverse.get(node) ?? [])) {
+        const d = outDeg.get(importer) ?? 1;
+        incoming += (rank.get(importer) ?? 0) / d;
+      }
+      next.set(node, BASE + danglingContrib + DAMPING * incoming);
+    }
+
+    for (const node of nodes) rank.set(node, next.get(node) ?? 0);
+  }
+
+  // Normalize to [0, 1] relative to max
+  const max = Math.max(1e-10, ...Array.from(rank.values()));
+  const normalized = new Map<string, number>();
+  for (const [node, r] of rank.entries()) normalized.set(node, r / max);
+
+  return normalized;
 }
 
 function findCycleNodes(

@@ -218,9 +218,12 @@ async function listSourceFiles(
  */
 export async function buildFunctionIntelligenceFromRoots(
   roots: string[],
-  config: SpecGuardConfig
+  config: SpecGuardConfig,
+  projectRoot?: string
 ): Promise<FunctionIntelligence> {
   const allFunctions: FunctionRecord[] = [];
+  // Relativize against project root if provided; otherwise fall back to the scan root
+  const baseDir = projectRoot ?? roots[0];
 
   for (const root of roots) {
     const files = await listSourceFiles(root, config);
@@ -239,7 +242,8 @@ export async function buildFunctionIntelligenceFromRoots(
 
         try {
           const result = runAdapter(adapter, filePath, source);
-          allFunctions.push(...result.functions);
+          const relPath = path.relative(baseDir, filePath);
+          allFunctions.push(...result.functions.map(fn => ({ ...fn, file: relPath })));
         } catch {
           // Skip files that fail to parse (malformed source, encoding issues)
         }

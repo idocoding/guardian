@@ -60,7 +60,7 @@ export async function runFeatureContext(options: FeatureContextOptions): Promise
   const intelPath = path.join(layout.machineDir, "codebase-intelligence.json");
   const intel = await loadCodebaseIntelligence(intelPath).catch(() => {
     throw new Error(
-      `Could not load codebase-intelligence.json from ${intelPath}. Run \`guardian intel --specs ${options.specs}\` first.`
+      `Could not load codebase-intelligence.json from ${intelPath}. Run \`guardian extract --output ${options.specs}\` first.`
     );
   });
 

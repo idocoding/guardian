@@ -3,15 +3,6 @@ import Parser from "tree-sitter";
 import path from "node:path";
 import type { SpecGuardAdapter, EndpointExtraction, ModelExtraction, ComponentExtraction, FunctionRecord } from "./types.js";
 
-// Utility to recursively find children of a certain type
-function findChildren(node: Parser.SyntaxNode, type: string): Parser.SyntaxNode[] {
-  const results: Parser.SyntaxNode[] = [];
-  if (node.type === type) results.push(node);
-  for (const child of node.namedChildren) {
-    results.push(...findChildren(child, type));
-  }
-  return results;
-}
 
 // ── Function-level intelligence helpers ──────────────────────────────────
 
@@ -101,6 +92,31 @@ function extractTsFunctions(
         bodyNode = valN.childForFieldName("body") ?? valN;
         isAsync = valN.children.some((c) => c.type === "async");
       }
+    } else if (
+      n.type === "interface_declaration" ||
+      n.type === "type_alias_declaration" ||
+      n.type === "class_declaration" ||
+      n.type === "abstract_class_declaration" ||
+      n.type === "enum_declaration"
+    ) {
+      // Type-level declarations: interfaces, types, classes, enums.
+      // These are the primary symbols in .d.ts files and typed source files.
+      const nameN = n.childForFieldName("name");
+      if (nameN) {
+        const name = getText(nameN);
+        records.push({
+          id: `${file}#${name}:${n.startPosition.row + 1}`,
+          name,
+          file,
+          lines: [n.startPosition.row + 1, n.endPosition.row + 1],
+          calls: [],
+          stringLiterals: [],
+          regexPatterns: [],
+          isAsync: false,
+          language: "typescript",
+        });
+      }
+      // Still recurse to catch methods inside classes
     }
 
     if (funcName && bodyNode) {

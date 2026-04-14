@@ -33,7 +33,7 @@ export async function runDocHtml(options: DocHtmlOptions): Promise<void> {
   const intel = await loadCodebaseIntelligence(intelPath).catch(() => {
     console.log("failed");
     throw new Error(
-      `Could not load ${intelPath}. Run \`guardian intel --specs ${options.specs}\` first.`
+      `Could not load ${intelPath}. Run \`guardian extract --output ${options.specs}\` first.`
     );
   });
   console.log(

@@ -24,4 +24,23 @@ __pycache__/
 .mcp.json
 CLAUDE.md
 # Dev-only integration scripts with hardcoded local paths
-scripts/
+scripts/bench-repos/
+
+# Benchmark repos (cloned third-party repos, ~830MB)
+bench-repos/
+
+# AI assistant session memory (not project code)
+memory/
+
+# Reference papers
+docs/*.pdf
+
+# Generated SQLite databases
+test-fixtures/specs/guardian.db
+*.db
+
+# Benchmark run results (generated API output with cost data)
+experiments/results/
+
+# Auto-generated guardian context files (like CLAUDE.md)
+AGENTS.md

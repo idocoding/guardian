@@ -230,8 +230,8 @@ npm install && npm run build && npm link
 ```bash
 guardian init                          # config, .specs dir, pre-commit hook, CLAUDE.md
 guardian extract                       # full architecture + UX snapshots + docs
+guardian extract --backend sqlite      # same + builds guardian.db with FTS index
 guardian generate --ai-context         # compact ~3K token AI context only
-guardian intel                         # build codebase-intelligence.json
 ```
 
 ### Search & Context

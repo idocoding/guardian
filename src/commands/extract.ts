@@ -13,6 +13,8 @@ export type ExtractOptions = {
   includeFileGraph: boolean;
   configPath?: string;
   docsMode?: "lean" | "full";
+  /** Storage backend for guardian.db — "sqlite" builds FTS index after extract */
+  backend?: "file" | "sqlite";
 };
 
 export async function runExtract(options: ExtractOptions): Promise<void> {
@@ -24,7 +26,7 @@ export async function runExtract(options: ExtractOptions): Promise<void> {
   // Auto-build codebase intelligence after every extract
   const specsDir = path.resolve(options.output);
   try {
-    await runIntel({ specs: specsDir });
+    await runIntel({ specs: specsDir, backend: options.backend });
   } catch {
     // Non-fatal — intel build failure should not break extract
   }

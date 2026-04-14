@@ -18,11 +18,28 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
+import { spawn } from "node:child_process";
 
 export type McpServeOptions = {
   specs: string;
   quiet?: boolean;
 };
+
+// ── CLI proxy ──
+// Resolve the guardian CLI binary relative to this file (dist/cli.js).
+const CLI_BIN = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../cli.js");
+
+/** Run a guardian CLI subcommand and return stdout. */
+function runCli(args: string[]): Promise<string> {
+  return new Promise((resolve) => {
+    const proc = spawn(process.execPath, [CLI_BIN, ...args], { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    let err = "";
+    proc.stdout.on("data", (d: Buffer) => { out += d.toString(); });
+    proc.stderr.on("data", (d: Buffer) => { err += d.toString(); });
+    proc.on("close", () => resolve(out.trim() || err.trim() || "{}"));
+  });
+}
 
 // ── Types ──
 
@@ -103,10 +120,13 @@ const metrics = {
   },
 };
 
-// ── Response cache (dedup repeated queries) ──
+// ── Session flag — written on every guardian tool call so the PreToolUse hook knows guardian is active ──
+const SESSION_FLAG = "/tmp/guardian-last-call";
+
+// ── Response cache (dedup repeated queries within a session) ──
 
 const responseCache = new Map<string, { text: string; time: number }>();
-const CACHE_TTL = 30_000; // 30s cache
+const CACHE_TTL = 30_000;
 
 function getCached(key: string): string | null {
   const entry = responseCache.get(key);
@@ -118,345 +138,29 @@ function setCache(key: string, text: string): void {
   responseCache.set(key, { text, time: Date.now() });
 }
 
-// ── Intelligence loader ──
+// ── Tool implementations — thin CLI proxies ──
+// All logic lives in `guardian search`. MCP tools are just structured wrappers.
 
-let intel: any = null;
-let intelPath = "";
-let lastLoadTime = 0;
-
-async function loadIntel(): Promise<any> {
-  // Reload if file changed (check every 5s max)
-  const now = Date.now();
-  if (intel && now - lastLoadTime < 5000) return intel;
-
-  try {
-    const raw = await fs.readFile(intelPath, "utf8");
-    intel = JSON.parse(raw);
-    lastLoadTime = now;
-  } catch {
-    // Return cached or empty
-    if (!intel) {
-      intel = { api_registry: {}, model_registry: {}, service_map: [], frontend_pages: [], meta: { project: "unknown", counts: {} } };
-    }
-  }
-  return intel;
-}
-
-// ── Function intelligence loader ──
-
-let funcIntel: any = null;
-let funcIntelPath = "";
-let funcIntelLoadTime = 0;
-
-async function loadFuncIntel(): Promise<any> {
-  if (!funcIntelPath) return null;
-  const now = Date.now();
-  if (funcIntel && now - funcIntelLoadTime < 5000) return funcIntel;
-  try {
-    const raw = await fs.readFile(funcIntelPath, "utf8");
-    funcIntel = JSON.parse(raw);
-    funcIntelLoadTime = now;
-  } catch {
-    // File may not exist yet — not an error
-  }
-  return funcIntel;
-}
-
-// ── Helpers ──
-
-const SKIP_SERVICES = new Set(["str", "dict", "int", "len", "float", "max", "join", "getattr", "lower", "open", "params.append", "updates.append"]);
-
-function compact(obj: any): string {
-  return JSON.stringify(obj);
-}
-
-function normalize(p: string): string {
-  return p.replace(/^\.\//, "").replace(/\/\//g, "/");
-}
-
-function findModule(data: any, file: string) {
-  const f = normalize(file);
-  return data.service_map?.find((m: any) => {
-    const mp = normalize(m.path || "");
-    return mp && (f.startsWith(mp + "/") || f === mp);
-  }) || data.service_map?.find((m: any) => {
-    // Fallback: match by module ID (handles doubled paths)
-    const mid = normalize(m.id || "");
-    return mid && f.includes(mid);
-  });
-}
-
-function findEndpointsInFile(data: any, file: string) {
-  const f = normalize(file);
-  const basename = path.basename(f);
-  return Object.values(data.api_registry || {}).filter((ep: any) => {
-    const ef = normalize(ep.file || "");
-    return ef && (f.includes(ef) || ef.includes(f) || ef.endsWith(basename));
-  });
-}
-
-function findModelsInFile(data: any, file: string) {
-  const f = normalize(file);
-  const basename = path.basename(f);
-  return Object.values(data.model_registry || {}).filter((m: any) => {
-    const mf = normalize(m.file || "");
-    return mf && (f.includes(mf) || mf.includes(f) || mf.endsWith(basename));
-  });
-}
-
-// ── Tool implementations (compact JSON, no redundancy) ──
+let specsInputDir = "";
 
 async function orient(): Promise<string> {
-  // Read architecture-context.md first — it has the richest summary
-  const contextPath = path.join(path.dirname(intelPath), "architecture-context.md");
-  try {
-    const raw = await fs.readFile(contextPath, "utf8");
-    // Extract the content between guardian:context markers
-    const match = raw.match(/<!-- guardian:context[^>]*-->([\s\S]*?)<!-- \/guardian:context -->/);
-    if (match) {
-      // Parse the markdown into compact structured data
-      const content = match[1];
-      const lines = content.split("\n").map((l: string) => l.trim()).filter(Boolean);
-
-      // Extract key sections
-      const desc = raw.match(/Description: (.+)/)?.[1] || "";
-      const codeMap = lines.find((l: string) => l.startsWith("**Backend:**")) || "";
-
-      // Module map with exports
-      const moduleLines = lines.filter((l: string) => l.startsWith("- **backend/") || l.startsWith("- **frontend/"));
-      const modules = moduleLines.map((l: string) => {
-        const m = l.match(/\*\*([^*]+)\*\*\s*\(([^)]+)\)\s*[—–-]\s*(.*)/);
-        return m ? [m[1], m[2], m[3].slice(0, 60)] : null;
-      }).filter(Boolean);
-
-      // Dependencies
-      const deps = lines.filter((l: string) => l.includes("→")).map((l: string) => l.replace(/^- /, ""));
-
-      // High-coupling files
-      const coupling = lines.filter((l: string) => l.match(/score \d/)).map((l: string) => l.replace(/^- /, ""));
-
-      // Structural intelligence
-      const si = lines.filter((l: string) => l.includes("depth=")).map((l: string) => l.replace(/^- /, ""));
-
-      // Model-endpoint map
-      const modelEp = lines.filter((l: string) => l.includes("endpoints) ->")).map((l: string) => l.replace(/^- /, ""));
-
-      return compact({
-        desc: desc.slice(0, 120),
-        map: codeMap,
-        modules,
-        deps,
-        coupling: coupling.slice(0, 5),
-        si: si.slice(0, 5),
-        modelEp,
-      });
-    }
-  } catch {}
-
-  // Fallback: build from codebase-intelligence.json
-  const d = await loadIntel();
-  const c = d.meta?.counts || {};
-  // Compute endpoint counts from api_registry (service_map counts are often 0)
-  const epByMod: Record<string, number> = {};
-  for (const ep of Object.values(d.api_registry || {}) as any[]) {
-    epByMod[ep.module] = (epByMod[ep.module] || 0) + 1;
-  }
-  const mods = (d.service_map || []).filter((m: any) => m.file_count > 0);
-  const topMods = mods
-    .map((m: any) => ({ ...m, ep_count: epByMod[m.id] || 0 }))
-    .sort((a: any, b: any) => b.ep_count - a.ep_count)
-    .slice(0, 6);
-  return compact({
-    p: d.meta?.project,
-    ep: c.endpoints, mod: c.models, pg: c.pages, m: c.modules,
-    top: topMods.map((m: any) => [m.id, m.ep_count, m.layer]),
-    pages: (d.frontend_pages || []).map((p: any) => p.path),
-  });
+  return runCli(["search", "--orient", "--input", specsInputDir]);
 }
 
 async function context(args: { target: string }): Promise<string> {
-  const d = await loadIntel();
-  const t = args.target;
-
-  // Check if target is an endpoint (e.g. "POST /sessions/start")
-  const epMatch = t.match(/^(GET|POST|PUT|DELETE|PATCH)\s+(.+)$/i);
-  if (epMatch) {
-    const ep: any = d.api_registry?.[`${epMatch[1].toUpperCase()} ${epMatch[2]}`]
-      || Object.values(d.api_registry || {}).find((e: any) => e.method === epMatch![1].toUpperCase() && e.path === epMatch![2]);
-    if (!ep) return compact({ err: "not found" });
-    const svcs = (ep.service_calls || []).filter((s: string) => !SKIP_SERVICES.has(s));
-    return compact({
-      ep: `${ep.method} ${ep.path}`, h: ep.handler, f: ep.file, m: ep.module,
-      req: ep.request_schema, res: ep.response_schema,
-      calls: svcs, ai: ep.ai_operations?.length || 0,
-    });
-  }
-
-  // Otherwise treat as file path
-  const file = t.replace(/^\.\//, "");
-  const mod = findModule(d, file);
-  const eps = findEndpointsInFile(d, file);
-  const models = findModelsInFile(d, file);
-
-  const fileName = path.basename(file, path.extname(file));
-  const calledBy: string[] = [];
-  for (const ep of Object.values(d.api_registry || {}) as any[]) {
-    if (ep.service_calls?.some((s: string) => s.toLowerCase().includes(fileName.toLowerCase()))) {
-      calledBy.push(`${ep.method} ${ep.path}`);
-    }
-  }
-
-  const calls = eps.flatMap((ep: any) => (ep.service_calls || []).filter((s: string) => !SKIP_SERVICES.has(s)));
-
-  return compact({
-    f: file,
-    mod: mod ? [mod.id, mod.layer] : null,
-    ep: eps.map((e: any) => `${e.method} ${e.path}`),
-    models: models.map((m: any) => [m.name, m.fields?.length || 0]),
-    calls: [...new Set(calls)],
-    calledBy: calledBy.slice(0, 8),
-  });
+  return runCli(["search", "--file", args.target, "--input", specsInputDir]);
 }
 
 async function impact(args: { target: string }): Promise<string> {
-  const d = await loadIntel();
-  const file = args.target.replace(/^\.\//, "");
-
-  const eps = findEndpointsInFile(d, file);
-  const models = findModelsInFile(d, file);
-  const modelNames = new Set(models.map((m: any) => m.name));
-
-  const affectedEps = Object.values(d.api_registry || {}).filter((ep: any) =>
-    (ep.request_schema && modelNames.has(ep.request_schema)) ||
-    (ep.response_schema && modelNames.has(ep.response_schema))
-  );
-
-  const mod = findModule(d, file);
-  const depMods = mod ? (d.service_map || []).filter((m: any) => m.imports?.includes(mod.id)) : [];
-
-  const affectedPages = (d.frontend_pages || []).filter((p: any) =>
-    p.api_calls?.some((call: string) => eps.some((ep: any) => call.includes(ep.path?.split("{")[0])))
-  );
-
-  const total = eps.length + affectedEps.length + depMods.length + affectedPages.length;
-
-  return compact({
-    f: file,
-    risk: total > 5 ? "HIGH" : total > 2 ? "MED" : "LOW",
-    ep: eps.map((e: any) => `${e.method} ${e.path}`),
-    models: models.map((m: any) => m.name),
-    affectedEp: affectedEps.map((e: any) => `${e.method} ${e.path}`),
-    depMods: depMods.map((m: any) => m.id),
-    pages: affectedPages.map((p: any) => p.path),
-  });
+  return runCli(["search", "--impact", args.target, "--input", specsInputDir]);
 }
 
 async function search(args: { query: string }): Promise<string> {
-  const d = await loadIntel();
-  const q = args.query.toLowerCase();
-
-  // Endpoints: match path, handler, or service calls
-  const eps = Object.values(d.api_registry || {}).filter((ep: any) =>
-    ep.path?.toLowerCase().includes(q) || ep.handler?.toLowerCase().includes(q) ||
-    ep.service_calls?.some((s: string) => s.toLowerCase().includes(q))
-  ).slice(0, 8).map((ep: any) => `${(ep as any).method} ${(ep as any).path} [${(ep as any).module}]`);
-
-  // Models: match name or fields
-  const models = Object.values(d.model_registry || {}).filter((m: any) =>
-    m.name?.toLowerCase().includes(q) || m.fields?.some((f: string) => f.toLowerCase().includes(q))
-  ).slice(0, 8).map((m: any) => `${(m as any).name}:${(m as any).fields?.length}f`);
-
-  // Modules: match id, imports, or exports
-  const mods = (d.service_map || []).filter((m: any) =>
-    m.id?.toLowerCase().includes(q) ||
-    m.imports?.some((i: string) => i.toLowerCase().includes(q))
-  ).slice(0, 5).map((m: any) => `${m.id}:${m.file_count}files,${m.endpoint_count}ep [${m.layer}]`);
-
-  // Exports: match exported symbol names across all modules
-  const exports: string[] = [];
-  for (const m of d.service_map || []) {
-    for (const sym of m.exports || []) {
-      if (sym.toLowerCase().includes(q)) {
-        exports.push(`${sym} [${m.id}]`);
-      }
-    }
-  }
-
-  // Files: match file paths across all modules
-  const files: string[] = [];
-  for (const m of d.service_map || []) {
-    for (const f of m.files || []) {
-      if (f.toLowerCase().includes(q)) {
-        files.push(`${f} [${m.id}]`);
-      }
-    }
-  }
-
-  // Enums: match name or values
-  const enums = Object.values(d.enum_registry || {}).filter((e: any) =>
-    e.name?.toLowerCase().includes(q) || e.values?.some((v: string) => v.toLowerCase().includes(q))
-  ).slice(0, 5).map((e: any) => `${e.name}:${e.values?.length}vals [${e.file}]`);
-
-  // Background tasks: match name or kind
-  const tasks = (d.background_tasks || []).filter((t: any) =>
-    t.name?.toLowerCase().includes(q) || t.kind?.toLowerCase().includes(q)
-  ).slice(0, 5).map((t: any) => `${t.name} [${t.kind}] ${t.file}`);
-
-  // Frontend pages: match path or component
-  const pages = (d.frontend_pages || []).filter((p: any) =>
-    p.path?.toLowerCase().includes(q) || p.component?.toLowerCase().includes(q) ||
-    p.api_calls?.some((c: string) => c.toLowerCase().includes(q))
-  ).slice(0, 5).map((p: any) => `${p.path} → ${p.component}`);
-
-  // Functions: search literal_index (tactic:simp, sorry, string patterns) + function names
-  const fnHits: string[] = [];
-  const fi = await loadFuncIntel();
-  if (fi) {
-    // Literal index: exact key match + partial key match
-    const litIndex: Record<string, Array<{ file: string; function: string; line: number }>> =
-      fi.literal_index ?? {};
-    for (const [key, hits] of Object.entries(litIndex)) {
-      if ((key as string).includes(q)) {
-        for (const h of (hits as any[]).slice(0, 3)) {
-          fnHits.push(`${h.function} [${h.file}:${h.line}] (lit:${key})`);
-        }
-      }
-      if (fnHits.length >= 10) break;
-    }
-    // Function names: match by name
-    if (fnHits.length < 10) {
-      for (const fn of (fi.functions ?? []) as any[]) {
-        if (fn.name?.toLowerCase().includes(q)) {
-          fnHits.push(`${fn.name} [${fn.file}:${fn.lines?.[0]}]`);
-          if (fnHits.length >= 10) break;
-        }
-      }
-    }
-  }
-
-  return compact({
-    ep: eps, mod: models, m: mods,
-    exports: exports.slice(0, 10),
-    files: files.slice(0, 8),
-    enums, tasks, pages,
-    ...(fnHits.length > 0 ? { fns: fnHits } : {}),
-  });
+  return runCli(["search", "--query", args.query, "--format", "json", "--backend", "auto", "--input", specsInputDir]);
 }
 
 async function model(args: { name: string }): Promise<string> {
-  const d = await loadIntel();
-  const m = d.model_registry?.[args.name];
-  if (!m) return compact({ err: "not found" });
-
-  const usedBy = Object.values(d.api_registry || {}).filter((ep: any) =>
-    ep.request_schema === args.name || ep.response_schema === args.name
-  ).map((ep: any) => `${ep.method} ${ep.path}`);
-
-  return compact({
-    name: m.name, fw: m.framework, f: m.file,
-    fields: m.fields, rels: m.relationships,
-    usedBy,
-  });
+  return runCli(["search", "--model", args.name, "--input", specsInputDir]);
 }
 
 // ── MCP protocol ──
@@ -524,7 +228,7 @@ const TOOL_HANDLERS: Record<string, (args: any) => Promise<string>> = {
   guardian_impact: impact,
   guardian_search: search,
   guardian_model: model,
-  guardian_metrics: async () => compact(metrics.summary()),
+  guardian_metrics: async () => JSON.stringify(metrics.summary()),
 };
 
 function respond(id: number | string | null, result: any): void {
@@ -597,6 +301,8 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
         const result = await handler(toolArgs);
         setCache(cacheKey, result);
         metrics.record(toolName, toolArgs, result, false);
+        // Write session flag so the PreToolUse hook knows guardian was called recently
+        fs.writeFile(SESSION_FLAG, Date.now().toString(), "utf8").catch(() => {});
         respond(req.id, {
           content: [{ type: "text", text: result }],
         });
@@ -622,33 +328,37 @@ async function handleRequest(req: JsonRpcRequest): Promise<void> {
 export async function runMcpServe(options: McpServeOptions): Promise<void> {
   const specsDir = path.resolve(options.specs);
   const quiet = options.quiet ?? false;
-  intelPath = path.join(specsDir, "machine", "codebase-intelligence.json");
-  funcIntelPath = path.join(specsDir, "machine", "function-intelligence.json");
-
-  // Pre-load intelligence
-  await loadIntel();
-  await loadFuncIntel();
+  specsInputDir = specsDir;
 
   // Log to stderr (stdout is for MCP protocol)
   if (!quiet) {
-    process.stderr.write(`Guardian MCP server started. Intelligence: ${intelPath}\n`);
+    process.stderr.write(`Guardian MCP server started. Specs: ${specsDir}\n`);
     process.stderr.write(`Tools: ${TOOLS.map((t) => t.name).join(", ")}\n`);
   }
 
   // Read JSON-RPC messages from stdin, line by line
   const rl = readline.createInterface({ input: process.stdin });
 
-  rl.on("line", async (line) => {
+  // Track in-flight async handlers so we can drain before exit.
+  // Previously all handlers were instant (in-process); now they spawn subprocesses.
+  const pending: Promise<void>[] = [];
+
+  rl.on("line", (line) => {
     if (!line.trim()) return;
-    try {
-      const req = JSON.parse(line) as JsonRpcRequest;
-      await handleRequest(req);
-    } catch (err) {
-      respondError(null, -32700, `Parse error: ${(err as Error).message}`);
-    }
+    const p = (async () => {
+      try {
+        const req = JSON.parse(line) as JsonRpcRequest;
+        await handleRequest(req);
+      } catch (err) {
+        respondError(null, -32700, `Parse error: ${(err as Error).message}`);
+      }
+    })();
+    pending.push(p);
   });
 
   rl.on("close", async () => {
+    // Drain all in-flight handlers before persisting metrics and exiting.
+    await Promise.allSettled(pending);
     // Persist session metrics to .specs/machine/mcp-metrics.jsonl
     const metricsPath = path.join(specsDir, "machine", "mcp-metrics.jsonl");
     try {

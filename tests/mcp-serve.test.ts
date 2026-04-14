@@ -9,6 +9,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
+import { SqliteSpecsStore } from "../src/db/sqlite-specs-store.js";
+import { populateFTSIndex } from "../src/db/fts-builder.js";
 
 const SPECS_DIR = path.resolve(__dirname, "../test-fixtures/specs");
 const INTEL_PATH = path.join(SPECS_DIR, "machine", "codebase-intelligence.json");
@@ -179,10 +181,16 @@ function getResult(responses: any[], id: number): any {
   return JSON.parse(r.result.content[0].text);
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   fs.mkdirSync(path.join(SPECS_DIR, "machine"), { recursive: true });
   fs.writeFileSync(INTEL_PATH, JSON.stringify(MOCK_INTEL));
   fs.writeFileSync(FUNC_INTEL_PATH, JSON.stringify(MOCK_FUNC_INTEL));
+
+  // Build guardian.db so guardian_search uses SQLite FTS5 (--backend auto)
+  const store = new SqliteSpecsStore(SPECS_DIR);
+  await store.init();
+  populateFTSIndex(store, MOCK_INTEL, undefined, MOCK_FUNC_INTEL);
+  await store.close();
 });
 
 describe("MCP Tools", () => {

@@ -47,10 +47,15 @@ export function renderContextBlock(
     lines.push("");
   }
 
-  // Cross-module dependencies
-  const crossEdges = architecture.dependencies.module_graph.filter(
-    e => e.from !== e.to
-  );
+  // Cross-module dependencies (deduplicated)
+  const seenEdges = new Set<string>();
+  const crossEdges = architecture.dependencies.module_graph.filter(e => {
+    if (e.from === e.to) return false;
+    const key = `${e.from}→${e.to}`;
+    if (seenEdges.has(key)) return false;
+    seenEdges.add(key);
+    return true;
+  });
   if (crossEdges.length > 0) {
     lines.push("### Module Dependencies");
     for (const edge of crossEdges.slice(0, 10)) {
