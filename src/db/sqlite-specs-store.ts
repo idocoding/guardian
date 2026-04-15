@@ -699,6 +699,16 @@ export class SqliteSpecsStore implements SpecsStore {
     }
   }
 
+  /** Return all file_path values currently in the search index. Useful for tests and diagnostics. */
+  listIndexedFilePaths(): string[] {
+    try {
+      const rows = this.db.prepare("SELECT file_path FROM search_fts").all() as { file_path: string }[];
+      return rows.map(r => r.file_path);
+    } catch {
+      return [];
+    }
+  }
+
   /**
    * Store API endpoint facts.
    * Called from populateFTSIndex() after reading intel/arch objects.
