@@ -278,6 +278,30 @@ export function populateFTSIndex(
   for (const row of buildFTSRows(intel)) rowMap.set(row.file_path, row);
   if (arch)      mergeArchitectureRows(rowMap, arch);
   if (funcIntel) mergeFunctionIntelRows(rowMap, funcIntel);
+
+  // Deduplicate paths where one is a suffix of another — caused when the snapshot
+  // stores some paths relative to backendRoot ("db/store.ts") and others relative
+  // to the workspace root ("src/db/store.ts"). Keep the longer (workspace-relative)
+  // path and merge any unique tokens from the shorter entry into it.
+  const paths = Array.from(rowMap.keys());
+  for (const shorter of paths) {
+    for (const longer of paths) {
+      if (shorter === longer) continue;
+      if (longer.endsWith("/" + shorter) && rowMap.has(shorter) && rowMap.has(longer)) {
+        const s = rowMap.get(shorter)!;
+        const l = rowMap.get(longer)!;
+        // Merge any tokens the shorter row had that the longer lacks
+        for (const field of ["symbol_name", "endpoint", "body", "module"] as const) {
+          if (s[field] && !l[field].includes(s[field])) {
+            l[field] = l[field] ? l[field] + " " + s[field] : s[field];
+          }
+        }
+        rowMap.delete(shorter);
+        break;
+      }
+    }
+  }
+
   store.rebuildSearchIndex(Array.from(rowMap.values()));
 
   // Per-function index — enables symbol-level search results with line numbers.

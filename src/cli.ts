@@ -371,16 +371,12 @@ program
   .command("init")
   .description("Initialize guardian for a project (config, .specs dir, pre-commit hook, CLAUDE.md)")
   .argument("[projectRoot]", "Repo or project root", process.cwd())
-  .option("--backend-root <path>", "Path to backend root")
-  .option("--frontend-root <path>", "Path to frontend root")
   .option("--output <path>", "Output directory", DEFAULT_SPECS_DIR)
   .option("--skip-hook", "Skip pre-commit hook installation", false)
-  .option("--backend <backend>", "Storage backend: 'file' (default) or 'sqlite' (builds guardian.db + FTS index)")
+  .option("--backend <backend>", "Storage backend: 'sqlite' (default) or 'file'")
   .action(async (projectRoot, options) => {
     await runInit({
       projectRoot,
-      backendRoot: options.backendRoot,
-      frontendRoot: options.frontendRoot,
       output: options.output,
       skipHook: options.skipHook ?? false,
       backend: options.backend,

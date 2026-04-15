@@ -19,8 +19,6 @@ import { DEFAULT_SPECS_DIR } from "../config.js";
 
 export type InitOptions = {
   projectRoot?: string;
-  backendRoot?: string;
-  frontendRoot?: string;
   output?: string;
   skipHook?: boolean;
   /** Storage backend — "sqlite" builds guardian.db + FTS index during init */
@@ -223,8 +221,6 @@ export async function runInit(options: InitOptions): Promise<void> {
     const { runExtract } = await import("./extract.js");
     await runExtract({
       projectRoot: root,
-      backendRoot: options.backendRoot,
-      frontendRoot: options.frontendRoot,
       output: specsDir,
       includeFileGraph: true,
       backend: options.backend,
@@ -233,8 +229,6 @@ export async function runInit(options: InitOptions): Promise<void> {
     const { runGenerate } = await import("./generate.js");
     await runGenerate({
       projectRoot: root,
-      backendRoot: options.backendRoot,
-      frontendRoot: options.frontendRoot,
       output: specsDir,
       aiContext: true,
     });
