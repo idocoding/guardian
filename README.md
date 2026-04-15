@@ -41,21 +41,24 @@ Developer writes code
     ↓ (save)
 VSCode extension (5s debounce)
     ↓
-guardian extract → .specs/
-guardian generate --ai-context → .specs/
-guardian context → CLAUDE.md (between markers)
+guardian extract → .specs/ + guardian.db (BM25 search index)
+guardian generate --ai-context → reads from guardian.db, writes CLAUDE.md
 Status bar: "✓ Guardian: stable · 35 ep · 8 pg"
     ↓ (git commit)
 Pre-commit hook: extract + context → auto-staged
     ↓
-Claude Code / Cursor reads CLAUDE.md → fresh architecture context
+Claude Code reads CLAUDE.md at session start
+Claude Code calls MCP tools (guardian_search, guardian_grep, guardian_glob…)
+    ↓ fresh, indexed context on every query
 ```
 
 After `guardian init`, your project gets:
-- `.specs/` directory with architecture snapshots
+- `.specs/` directory with architecture snapshots + `guardian.db` (SQLite search index)
 - `CLAUDE.md` with auto-injected context (refreshed on every save and commit)
 - Pre-commit hook that keeps context fresh automatically
-- `guardian.config.json` for project settings (roots auto-detected at runtime)
+- `.mcp.json` wiring Claude Code and Cursor to Guardian's MCP server
+- `guardian.config.json` with a unique `project_id` and auto-detected roots
+- MCP-first hook: Claude Code is nudged to call `guardian_search` before reading source files
 
 ## Claude Code / Cursor Integration
 
@@ -115,6 +118,19 @@ All responses are compact JSON — no pretty-printing, no verbose keys. Repeated
 
 > **Note:** After `.mcp.json` is created or modified, you must **restart your Claude Code / Cursor session** (or reload the VSCode window) for the MCP server to connect. MCP config is only read at session start.
 
+### MCP-First Hook
+
+`guardian init` also installs a Claude Code hook that encourages AI tools to call Guardian before reading source files directly. The hook is session-scoped — once any `guardian_*` tool is called, file reads are unblocked for the rest of the session. No repeated interruptions.
+
+The block message tells Claude exactly what to call:
+```
+Call one of these first:
+  guardian_search("your query")  — find files/symbols/endpoints by keyword
+  guardian_grep("pattern")       — semantic grep (replaces Grep tool)
+  guardian_glob("src/auth/**")   — semantic file discovery (replaces Glob tool)
+  guardian_orient()              — get codebase overview
+```
+
 ## VSCode Extension
 
 Install from [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=toolbaux.toolbaux-guardian):
@@ -139,14 +155,21 @@ Cmd+Shift+P → "Extensions: Install from VSIX"
 ## Key Commands
 
 ```bash
-# One-time setup — creates config, .specs/, pre-commit hook, CLAUDE.md
+# One-time setup — config, .specs/, guardian.db, pre-commit hook, .mcp.json, CLAUDE.md
 guardian init
 
-# Extract architecture (run after major changes, or let the hook do it)
+# Extract architecture + build search index (guardian.db built automatically)
 guardian extract
 
-# Search your codebase by concept
+# Extract without DB (CI environments that don't need search)
+guardian extract --backend file
+
+# Search your codebase by concept (uses guardian.db when available)
 guardian search --query "session"
+guardian search --query "auth" --types functions,endpoints
+
+# Inject fresh context into CLAUDE.md
+guardian context --output CLAUDE.md
 
 # Compute architectural drift
 guardian drift
@@ -239,11 +262,12 @@ guardian generate --ai-context         # compact ~3K token AI context only
 ### Search & Context
 
 ```bash
-guardian search --query "session"                  # search models, endpoints, components
-guardian search --query "auth" --types models,endpoints
-guardian context --focus "auth"                     # focused AI context block
-guardian context --output CLAUDE.md                 # inject between auto-context markers
-guardian summary                                   # executive summary
+guardian search --query "session"                        # search models, endpoints, components, functions
+guardian search --query "auth" --types models,endpoints  # filter by type
+guardian search --query "validate token" --types functions  # function-level search (uses guardian.db)
+guardian context --focus "auth"                          # focused AI context block
+guardian context --output CLAUDE.md                      # inject between auto-context markers
+guardian summary                                         # executive summary
 ```
 
 ### Architectural Metrics
@@ -285,10 +309,15 @@ guardian feature-context --spec feature-specs/billing.yaml
 
 ```json
 {
+  "project_id": "auto-generated-uuid",
   "project": {
     "description": "Short product description for generated docs",
     "backendRoot": "./backend",
     "frontendRoot": "./frontend"
+  },
+  "ignore": {
+    "directories": ["bench-repos", "fixtures", "vendor"],
+    "paths": ["src/generated"]
   },
   "frontend": {
     "routeDirs": ["app"],
@@ -311,6 +340,8 @@ guardian feature-context --spec feature-specs/billing.yaml
 }
 ```
 
+> **Tip:** Use `ignore.directories` to exclude directories that Guardian indexes but aren't part of your project (e.g. benchmark repos, vendor directories, generated code). Guardian scans all source files under the project root by design — configure ignores to keep the search index clean.
+
 </details>
 
 <details>
@@ -318,13 +349,15 @@ guardian feature-context --spec feature-specs/billing.yaml
 
 ```
 .specs/
+├── guardian.db                      ← SQLite search index (BM25 + function call graph)
 ├── machine/
 │   ├── architecture-context.md      ← AI context (~3K tokens)
 │   ├── architecture.snapshot.yaml   ← full architecture snapshot
 │   ├── ux.snapshot.yaml             ← frontend components + pages
 │   ├── codebase-intelligence.json   ← unified registry
-│   ├── drift.report.json            ← drift metrics
-│   ├── constraints.json             ← duplicates, cycles
+│   ├── function-intelligence.json   ← function call graph + literal index
+│   ├── structural-intelligence.json ← depth/complexity per module
+│   ├── drift.heatmap.json           ← file-level change frequency
 │   └── docs/                        ← generated markdown docs
 ├── human/
 │   ├── product-document.md          ← LLM-powered product doc
