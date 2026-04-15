@@ -486,7 +486,7 @@ def main() -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    conditions = ["guardian", "baseline"] if args.condition == "both" else [args.condition]
+    conditions = ["baseline", "guardian"] if args.condition == "both" else [args.condition]
     debug_dir = Path(args.debug_json_dir) if args.debug_json_dir else None
     for cond in conditions:
         suffix = "codex" if args.model.startswith("gpt-") else re.sub(r"[^A-Za-z0-9._-]+", "_", args.model)

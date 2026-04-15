@@ -280,9 +280,93 @@ export function populateFTSIndex(
   if (funcIntel) mergeFunctionIntelRows(rowMap, funcIntel);
   store.rebuildSearchIndex(Array.from(rowMap.values()));
 
+  // Per-function index — enables symbol-level search results with line numbers.
+  if (funcIntel?.functions?.length) {
+    store.rebuildFunctionIndex(funcIntel.functions);
+  }
+
   // Build dependency graph
   if (arch) {
     const edges = buildDepEdges(arch);
     store.rebuildDeps(edges);
   }
+
+  // ── Normalised fact tables ─────────────────────────────────────────────────
+  // Merge arch endpoints + intel api_registry into endpoints_raw.
+  // arch.endpoints is the richer source (has method + file); intel.api_registry adds
+  // request/response schemas and service_calls that arch may not have.
+  const endpointMap = new Map<string, {
+    method: string; path: string; handler: string; file_path: string; module: string;
+    service_calls: string[]; request_schema: string; response_schema: string;
+  }>();
+  for (const ep of arch?.endpoints ?? []) {
+    const key = `${(ep.method ?? "").toUpperCase()}::${ep.path ?? ""}`;
+    if (!ep.path) continue;
+    endpointMap.set(key, {
+      method: ep.method ?? "",
+      path: ep.path,
+      handler: ep.handler ?? "",
+      file_path: ep.file ?? ep.file_path ?? "",
+      module: ep.module ?? "",
+      service_calls: ep.service_calls ?? [],
+      request_schema: "",
+      response_schema: "",
+    });
+  }
+  for (const [route, entry] of Object.entries<any>(intel?.api_registry ?? {})) {
+    // route is like "GET /users" or "/users"
+    const parts = route.trim().split(/\s+/);
+    const method = parts.length >= 2 ? parts[0].toUpperCase() : "";
+    const p      = parts.length >= 2 ? parts[1] : parts[0];
+    const key = `${method}::${p}`;
+    const existing = endpointMap.get(key);
+    if (existing) {
+      if (entry.request_schema)  existing.request_schema  = entry.request_schema;
+      if (entry.response_schema) existing.response_schema = entry.response_schema;
+      if (entry.service_calls?.length) existing.service_calls = entry.service_calls;
+    } else {
+      endpointMap.set(key, {
+        method,
+        path: p,
+        handler: entry.handler ?? "",
+        file_path: entry.file ?? "",
+        module: entry.module ?? "",
+        service_calls: entry.service_calls ?? [],
+        request_schema: entry.request_schema ?? "",
+        response_schema: entry.response_schema ?? "",
+      });
+    }
+  }
+  store.rebuildEndpointsRaw(Array.from(endpointMap.values()));
+
+  // Merge arch data_models + intel model_registry into models_raw.
+  const modelMap = new Map<string, {
+    name: string; file_path: string; module: string; fields: string[]; relationships: string[];
+  }>();
+  for (const m of arch?.data_models ?? []) {
+    if (!m.name) continue;
+    modelMap.set(m.name, {
+      name: m.name,
+      file_path: m.file ?? m.file_path ?? "",
+      module: m.module ?? "",
+      fields: m.fields ?? [],
+      relationships: m.relationships ?? [],
+    });
+  }
+  for (const [name, entry] of Object.entries<any>(intel?.model_registry ?? {})) {
+    const existing = modelMap.get(name);
+    if (existing) {
+      if (entry.fields?.length)        existing.fields        = entry.fields;
+      if (entry.relationships?.length) existing.relationships = entry.relationships;
+    } else {
+      modelMap.set(name, {
+        name,
+        file_path: entry.file ?? "",
+        module: entry.module ?? "",
+        fields: entry.fields ?? [],
+        relationships: entry.relationships ?? [],
+      });
+    }
+  }
+  store.rebuildModelsRaw(Array.from(modelMap.values()));
 }

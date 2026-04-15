@@ -418,7 +418,9 @@ describe("MCP Protocol Compliance", () => {
     expect(names).toContain("guardian_search");
     expect(names).toContain("guardian_model");
     expect(names).toContain("guardian_metrics");
-    expect(names.length).toBe(6);
+    expect(names).toContain("guardian_grep");
+    expect(names).toContain("guardian_glob");
+    expect(names.length).toBe(8);
   });
 
   it("unknown method with id returns error", async () => {

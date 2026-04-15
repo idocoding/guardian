@@ -59,6 +59,7 @@ export async function runSearch(options: SearchOptions): Promise<void> {
       if (sqliteResult !== null) {
         const base = JSON.parse(await querySearch(inputDir, options.query));
         base.files = sqliteResult.files;
+        base.symbols = sqliteResult.symbols;
         base.search_signal = sqliteResult.signal;
         console.log(JSON.stringify(base));
         return;
@@ -191,11 +192,35 @@ async function runSearchSqlite(specsInput: string, query: string, limit: number,
       return true;
     }
 
+    let queryVec: Float32Array | undefined;
+    try {
+      const { embedQuery } = await import("../db/embeddings.js");
+      const vec = await embedQuery(cleaned || query, process.env.OPENAI_API_KEY);
+      if (vec) queryVec = vec;
+    } catch { /* graceful degradation */ }
+
+    const symbols = store.searchSymbols(cleaned || query, Math.ceil(limit / 2), queryVec);
+
     const lines: string[] = [`## FTS5 search: "${query}"\n`];
+    // Build a map of file → matching symbols for quick lookup
+    const symbolsByFile = new Map<string, Array<{ name: string; line: number }>>();
+    for (const s of symbols) {
+      if (!symbolsByFile.has(s.file_path)) symbolsByFile.set(s.file_path, []);
+      symbolsByFile.get(s.file_path)!.push({ name: s.name, line: s.line });
+    }
+
     for (const r of results) {
       const rank = Math.abs(r.rank).toFixed(3);
       lines.push(`### \`${r.file_path}\`  (score: ${rank})`);
-      if (r.symbol_name) lines.push(`  symbols: ${r.symbol_name}`);
+      // Matching symbols from this file (snippet equivalent)
+      const fileSyms = symbolsByFile.get(r.file_path) ?? [];
+      const inlineSyms = r.matching_symbols.filter(s => !fileSyms.some(f => f.name === s));
+      if (fileSyms.length) {
+        for (const s of fileSyms) lines.push(`  → \`${s.name}\` :${s.line}`);
+      }
+      if (inlineSyms.length) {
+        lines.push(`  symbols: ${inlineSyms.join(", ")}`);
+      }
       if (r.imports.length)  lines.push(`  imports: ${r.imports.join(", ")}`);
       if (r.used_by.length)  lines.push(`  used by: ${r.used_by.join(", ")}`);
       lines.push("");
@@ -212,7 +237,11 @@ async function runSearchSqlite(specsInput: string, query: string, limit: number,
  * Returns null when guardian.db doesn't exist OR FTS returns 0 results
  * so the caller falls through to file-based querySearch().
  */
-type SqliteFileResult = { files: string[]; signal: { score: number; confidence: "high" | "medium" | "low"; reason: string } };
+type SqliteFileResult = {
+  files: string[];
+  symbols: Array<{ file: string; name: string; line: number }>;
+  signal: { score: number; confidence: "high" | "medium" | "low"; reason: string };
+};
 
 async function getSqliteFileList(specsInput: string, query: string, limit: number, backend: "sqlite" | "auto" = "auto"): Promise<SqliteFileResult | null> {
   const { openSpecsStore } = await import("../db/index.js");
@@ -239,7 +268,22 @@ async function getSqliteFileList(specsInput: string, query: string, limit: numbe
     if (results.length === 0) return null;
 
     const signal = store.querySignal(query);
-    return { files: results.map((r) => r.file_path), signal };
+
+    // Hybrid symbol search: BM25 + call-graph authority + optional vector similarity.
+    // embedQuery uses local model (no API key) or OpenAI if OPENAI_API_KEY is set.
+    let queryVec: Float32Array | undefined;
+    try {
+      const { embedQuery } = await import("../db/embeddings.js");
+      const vec = await embedQuery(cleaned || query, process.env.OPENAI_API_KEY);
+      if (vec) queryVec = vec;
+    } catch { /* graceful degradation — vector unavailable */ }
+
+    const symbols = store.searchSymbols(cleaned || query, Math.ceil(limit / 2), queryVec);
+    return {
+      files: results.map((r) => r.file_path),
+      symbols: symbols.map((s) => ({ file: s.file_path, name: s.name, line: s.line })),
+      signal,
+    };
   } finally {
     await store.close();
   }

@@ -14,6 +14,7 @@ import { writeCodebaseIntelligenceViaStore } from "../extract/codebase-intel.js"
 import { getOutputLayout } from "../output-layout.js";
 import { SqliteSpecsStore } from "../db/sqlite-specs-store.js";
 import { populateFTSIndex } from "../db/fts-builder.js";
+import { embedFunctions } from "../db/embeddings.js";
 
 export type IntelOptions = {
   specs: string;
@@ -67,6 +68,30 @@ export async function runIntel(options: IntelOptions): Promise<void> {
         } catch { /* not generated yet — skip */ }
         populateFTSIndex(store, intel, arch, funcIntel);
         console.log(`Built FTS5 search index (${Object.keys(intel.api_registry ?? {}).length} endpoints indexed)`);
+
+        // Populate module_metrics from structural-intelligence.json (if present).
+        try {
+          const siRaw = await (await import("node:fs/promises")).readFile(
+            (await import("node:path")).join(machineDir, "structural-intelligence.json"), "utf8"
+          );
+          const siReports = JSON.parse(siRaw);
+          if (Array.isArray(siReports) && siReports.length > 0) {
+            store.rebuildModuleMetrics(siReports);
+            console.log(`Indexed ${siReports.length} module metrics`);
+          }
+        } catch { /* structural-intelligence.json not generated yet — skip */ }
+
+        // Embed functions for semantic (vector) search.
+        // Uses local on-device model by default (no API key needed).
+        // If OPENAI_API_KEY is set, uses OpenAI text-embedding-3-small (better quality).
+        if (funcIntel?.functions?.length) {
+          console.log(`[guardian embed] embedding ${funcIntel.functions.length} functions…`);
+          try {
+            await embedFunctions(store, funcIntel.functions, process.env.OPENAI_API_KEY);
+          } catch (err) {
+            console.warn(`[guardian embed] skipped: ${(err as Error).message}`);
+          }
+        }
       }
 
       console.log(`Wrote guardian.db → ${layout.rootDir}`);

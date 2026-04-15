@@ -1,11 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import yaml from "js-yaml";
 import { buildSnapshots } from "../extract/index.js";
 import { renderContextBlock } from "../extract/context-block.js";
 import { getOutputLayout } from "../output-layout.js";
 import { DEFAULT_SPECS_DIR } from "../config.js";
 import { analyzeDepth } from "../extract/analyzers/depth.js";
 import type { StructuralIntelligenceReport } from "../extract/types.js";
+import { SqliteSpecsStore, DB_FILENAME } from "../db/sqlite-specs-store.js";
 
 export type GenerateOptions = {
   projectRoot?: string;
@@ -32,17 +34,85 @@ export async function runGenerate(options: GenerateOptions): Promise<void> {
 
   const outputRoot = path.resolve(options.output ?? DEFAULT_SPECS_DIR);
   const layout = getOutputLayout(outputRoot);
-  const { architecture, ux } = await buildSnapshots({
-    projectRoot: options.projectRoot,
-    backendRoot: options.backendRoot,
-    frontendRoot: options.frontendRoot,
-    output: outputRoot,
-    includeFileGraph: true,
-    configPath: options.configPath
-  });
 
-  // Load persisted Structural Intelligence reports emitted by `guardian extract`
-  const siReports = await loadStructuralIntelligenceReports(layout.machineDir);
+  // ── Load snapshots: DB first, full re-extraction as fallback ──────────────
+  // When guardian.db exists (built by extract), load snapshots from the specs
+  // table instead of re-analysing the whole codebase. This is ~10× faster.
+  let architecture: Awaited<ReturnType<typeof buildSnapshots>>["architecture"];
+  let ux: Awaited<ReturnType<typeof buildSnapshots>>["ux"];
+  let siReports: StructuralIntelligenceReport[];
+
+  const dbPath = path.join(outputRoot, DB_FILENAME);
+  let store: SqliteSpecsStore | null = null;
+  try {
+    await fs.stat(dbPath);
+    store = new SqliteSpecsStore(outputRoot);
+    await store.init();
+  } catch {
+    store = null;
+  }
+
+  try {
+    if (store) {
+      const archEntry = await store.readSpec("architecture.snapshot");
+      const uxEntry   = await store.readSpec("ux.snapshot");
+      if (archEntry && uxEntry) {
+        console.log("[guardian] Loading snapshots from guardian.db");
+        architecture = yaml.load(archEntry.content) as typeof architecture;
+        ux           = yaml.load(uxEntry.content)   as typeof ux;
+      } else {
+        console.log("[guardian] Snapshots not in DB — extracting from codebase");
+        ({ architecture, ux } = await buildSnapshots({
+          projectRoot: options.projectRoot,
+          backendRoot: options.backendRoot,
+          frontendRoot: options.frontendRoot,
+          output: outputRoot,
+          includeFileGraph: true,
+          configPath: options.configPath
+        }));
+      }
+
+      // SI from module_metrics, fall back to file
+      const metricRows = store.readModuleMetrics();
+      if (metricRows.length > 0) {
+        siReports = metricRows.map(r => ({
+          feature: r.module,
+          structure: { nodes: r.nodes, edges: r.edges },
+          metrics: { depth: 0, fanout_avg: 0, fanout_max: 0, density: 0, has_cycles: false },
+          scores: { depth_score: 0, fanout_score: 0, density_score: 0, cycle_score: 0, query_score: 0 },
+          confidence: { value: r.confidence, level: r.confidence_level as "WEAK" | "MODERATE" | "STRONG" },
+          ambiguity: { level: "LOW" as const },
+          classification: {
+            depth_level: r.depth_level as "LOW" | "MEDIUM" | "HIGH",
+            propagation: r.propagation as "LOCAL" | "MODERATE" | "STRONG",
+            compressible: r.compressible as "COMPRESSIBLE" | "PARTIAL" | "NON_COMPRESSIBLE",
+          },
+          recommendation: {
+            primary: { pattern: r.pattern, confidence: r.confidence },
+            fallback: { pattern: "", condition: "" },
+            avoid: [],
+          },
+          guardrails: { enforce_if_confidence_above: 0.7 },
+          override: { allowed: true as const, requires_reason: true as const },
+        }));
+      } else {
+        siReports = await loadStructuralIntelligenceReports(layout.machineDir);
+      }
+    } else {
+      console.log("[guardian] No guardian.db found — extracting from codebase");
+      ({ architecture, ux } = await buildSnapshots({
+        projectRoot: options.projectRoot,
+        backendRoot: options.backendRoot,
+        frontendRoot: options.frontendRoot,
+        output: outputRoot,
+        includeFileGraph: true,
+        configPath: options.configPath
+      }));
+      siReports = await loadStructuralIntelligenceReports(layout.machineDir);
+    }
+  } finally {
+    if (store) await store.close();
+  }
 
   // If a --focus query is provided, prepend a real-time SI report for that query
   if (options.focus) {

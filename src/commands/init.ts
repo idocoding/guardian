@@ -14,6 +14,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { DEFAULT_SPECS_DIR } from "../config.js";
 
 export type InitOptions = {
@@ -32,25 +33,55 @@ const DEFAULT_CONFIG = {
   },
 };
 
+/**
+ * Hook script written to .claude/hooks/mcp-first.sh
+ *
+ * Blocks Read/Glob/Grep until a guardian MCP tool has been called in the
+ * current session. Session state lives in /tmp/guardian-used-<SESSION_ID>
+ * and is set by the PostToolUse hook (guardian-used.sh) below.
+ */
 const CLAUDE_CODE_HOOK_SCRIPT = `#!/bin/bash
-# Guardian MCP-first hook — ensures AI tools use Guardian MCP before reading source files.
-# Installed by: guardian init
+# Guardian MCP-first hook — blocks Read/Glob/Grep until guardian tools are used.
+# Installed by: guardian init  (v3 — session-scoped flag, no time drift)
 
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "default"')
+FLAG="/tmp/guardian-used-\${SESSION_ID}"
 
-cat >&2 <<BLOCK
-BLOCKED: Use Guardian MCP tools before reading source files.
+# If guardian was called in this session, allow all file operations.
+if [ -f "$FLAG" ]; then
+  exit 0
+fi
 
-Use these MCP tools first:
-  - guardian_orient  — get codebase overview
-  - guardian_search  — find features by keyword
-  - guardian_context — deep dive into a specific area
+cat >&2 <<'BLOCK'
+BLOCKED: Use Guardian MCP tools before exploring source files.
 
-Then you can read individual files as needed.
+Call one of these first:
+  guardian_search("your query")  — find files/symbols/endpoints by keyword
+  guardian_grep("pattern")       — semantic grep (replaces Grep tool)
+  guardian_glob("src/auth/**")   — semantic file discovery (replaces Glob tool)
+  guardian_orient()              — get codebase overview
+
+File reads are unblocked automatically for the rest of this session.
 BLOCK
 
 exit 2
+`;
+
+/**
+ * Hook script written to .claude/hooks/guardian-used.sh
+ *
+ * Called by PostToolUse after any guardian_* tool. Sets the session flag
+ * that mcp-first.sh checks, unblocking subsequent Read/Glob/Grep calls.
+ */
+const GUARDIAN_USED_SCRIPT = `#!/bin/bash
+# Guardian PostToolUse hook — marks guardian as used for this session.
+# Installed by: guardian init
+
+INPUT=$(cat)
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "default"')
+touch "/tmp/guardian-used-\${SESSION_ID}"
+exit 0
 `;
 
 const HOOK_SCRIPT = `#!/bin/sh
@@ -96,6 +127,21 @@ export async function runInit(options: InitOptions): Promise<void> {
     console.log("  ✓ Created guardian.config.json");
   } else {
     console.log("  · guardian.config.json already exists");
+  }
+
+  // 2b. Ensure project_id is present in guardian.config.json
+  try {
+    const raw = await fs.readFile(configPath, "utf8");
+    const cfg = JSON.parse(raw) as Record<string, unknown>;
+    if (!cfg.project_id) {
+      cfg.project_id = randomUUID();
+      await fs.writeFile(configPath, JSON.stringify(cfg, null, 2) + "\n", "utf8");
+      console.log("  ✓ Added project_id to guardian.config.json");
+    } else {
+      console.log("  · guardian.config.json already has project_id");
+    }
+  } catch {
+    // Non-fatal — config may not be valid JSON yet
   }
 
   // 3. Install pre-commit hook
@@ -234,17 +280,12 @@ async function setupClaudeCodeHooks(root: string, specsDir: string): Promise<voi
     if (await fileExists(mcpJsonPath)) {
       try {
         mcpConfig = JSON.parse(await fs.readFile(mcpJsonPath, "utf8"));
-      } catch {
-        // Corrupted — overwrite
-      }
+      } catch { /* corrupted — overwrite */ }
     }
     if (!mcpConfig.mcpServers) mcpConfig.mcpServers = {};
     const servers = mcpConfig.mcpServers as Record<string, unknown>;
     if (!servers.guardian) {
-      servers.guardian = {
-        command: "guardian",
-        args: ["mcp-serve", "--specs", specsDir],
-      };
+      servers.guardian = { command: "guardian", args: ["mcp-serve", "--specs", specsDir] };
       await fs.writeFile(mcpJsonPath, JSON.stringify(mcpConfig, null, 2) + "\n", "utf8");
       console.log("  ✓ Created .mcp.json (MCP server config)");
     } else {
@@ -254,63 +295,57 @@ async function setupClaudeCodeHooks(root: string, specsDir: string): Promise<voi
     console.warn(`  ⚠ Could not create .mcp.json: ${(err as Error).message}`);
   }
 
-  const claudeDir = path.join(root, ".claude");
-  const hooksDir = path.join(claudeDir, "hooks");
-  const settingsPath = path.join(claudeDir, "settings.json");
-  const hookScriptPath = path.join(hooksDir, "mcp-first.sh");
+  const claudeDir   = path.join(root, ".claude");
+  const hooksDir    = path.join(claudeDir, "hooks");
+  const settingsPath    = path.join(claudeDir, "settings.json");
+  const mcpFirstPath    = path.join(hooksDir, "mcp-first.sh");
+  const guardianUsedPath = path.join(hooksDir, "guardian-used.sh");
 
   await fs.mkdir(hooksDir, { recursive: true });
 
-  // Write the hook script
-  if (!(await fileExists(hookScriptPath))) {
-    await fs.writeFile(hookScriptPath, CLAUDE_CODE_HOOK_SCRIPT, "utf8");
-    await fs.chmod(hookScriptPath, 0o755);
-    console.log("  ✓ Created Claude Code MCP-first hook (.claude/hooks/mcp-first.sh)");
-  } else {
-    console.log("  · Claude Code hook already exists");
-  }
+  // Always overwrite hook scripts so they stay in sync with this version of guardian.
+  await fs.writeFile(mcpFirstPath, CLAUDE_CODE_HOOK_SCRIPT, "utf8");
+  await fs.chmod(mcpFirstPath, 0o755);
+  console.log("  ✓ Wrote .claude/hooks/mcp-first.sh (PreToolUse — blocks until guardian called)");
+
+  await fs.writeFile(guardianUsedPath, GUARDIAN_USED_SCRIPT, "utf8");
+  await fs.chmod(guardianUsedPath, 0o755);
+  console.log("  ✓ Wrote .claude/hooks/guardian-used.sh (PostToolUse — sets session flag)");
 
   // Write or merge .claude/settings.json
   let settings: Record<string, unknown> = {};
   if (await fileExists(settingsPath)) {
     try {
       settings = JSON.parse(await fs.readFile(settingsPath, "utf8"));
-    } catch {
-      // Corrupted file — overwrite
-    }
+    } catch { /* corrupted — overwrite */ }
   }
 
-  // Add MCP server config
+  // MCP server registration
   if (!settings.mcpServers) settings.mcpServers = {};
-  const mcpServers = settings.mcpServers as Record<string, unknown>;
-  if (!mcpServers.guardian) {
-    mcpServers.guardian = {
-      command: "guardian",
-      args: ["mcp-serve", "--specs", specsDir],
-    };
-  }
+  (settings.mcpServers as Record<string, unknown>).guardian = {
+    command: "guardian",
+    args: ["mcp-serve", "--specs", specsDir],
+  };
 
-  // Add PreToolUse hook
-  const hookEntry = {
-    matcher: "Read|Glob|Grep",
-    hooks: [
+  // Hooks — always overwrite to keep in sync with installed scripts.
+  settings.hooks = {
+    // PreToolUse: block Read/Glob/Grep until a guardian tool has been called.
+    // The script itself handles the session-flag check — no "if" filter needed here.
+    PreToolUse: [
       {
-        type: "command",
-        if: "Read(//*/src/*)|Glob(*src*)|Grep(*src*)",
-        command: '"$CLAUDE_PROJECT_DIR"/.claude/hooks/mcp-first.sh',
+        matcher: "Read|Glob|Grep",
+        hooks: [{ type: "command", command: ".claude/hooks/mcp-first.sh" }],
+      },
+    ],
+    // PostToolUse: set the session flag after any guardian MCP tool call.
+    PostToolUse: [
+      {
+        matcher: "mcp__guardian__guardian_search|mcp__guardian__guardian_orient|mcp__guardian__guardian_context|mcp__guardian__guardian_impact|mcp__guardian__guardian_grep|mcp__guardian__guardian_glob",
+        hooks: [{ type: "command", command: ".claude/hooks/guardian-used.sh" }],
       },
     ],
   };
 
-  if (!settings.hooks) settings.hooks = {};
-  const hooks = settings.hooks as Record<string, unknown>;
-  if (!hooks.PreToolUse) {
-    hooks.PreToolUse = [hookEntry];
-    console.log("  ✓ Configured Claude Code PreToolUse hook in .claude/settings.json");
-  } else {
-    console.log("  · Claude Code PreToolUse hook already configured");
-  }
-
   await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
-  console.log("  ✓ Updated .claude/settings.json (MCP server + hooks)");
+  console.log("  ✓ Updated .claude/settings.json (MCP server + PreToolUse + PostToolUse hooks)");
 }

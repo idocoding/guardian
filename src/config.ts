@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 export type SpecGuardConfig = {
+  project_id?: string;
   project?: {
     root?: string;
     backendRoot?: string;
@@ -75,7 +76,7 @@ export type SpecGuardConfig = {
 /** Single source of truth for the default specs output directory */
 export const DEFAULT_SPECS_DIR = ".specs";
 
-const DEFAULT_CONFIG: Required<SpecGuardConfig> = {
+const DEFAULT_CONFIG: SpecGuardConfig = {
   project: {
     root: "",
     backendRoot: "",
@@ -367,6 +368,7 @@ function normalizeConfig(input: SpecGuardConfig, configDir?: string): SpecGuardC
 
 function mergeConfig(base: SpecGuardConfig, override: SpecGuardConfig): SpecGuardConfig {
   return {
+    project_id: override.project_id ?? base.project_id,
     project: {
       root: override.project?.root ?? base.project?.root ?? "",
       backendRoot: override.project?.backendRoot ?? base.project?.backendRoot ?? "",

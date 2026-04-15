@@ -163,6 +163,83 @@ async function model(args: { name: string }): Promise<string> {
   return runCli(["search", "--model", args.name, "--input", specsInputDir]);
 }
 
+/**
+ * guardian_grep — semantic grep via guardian search.
+ *
+ * Replaces raw Grep tool calls. Runs guardian BM25+vector search and returns
+ * matching symbols (file:line:name) and files, formatted like grep output.
+ * Claude gets richer context (call-graph, authority) with zero token overhead.
+ */
+async function grep(args: { query: string; path?: string }): Promise<string> {
+  const raw = await runCli([
+    "search", "--query", args.query, "--format", "json", "--backend", "auto", "--input", specsInputDir,
+  ]);
+  try {
+    const data = JSON.parse(raw);
+    const lines: string[] = [`guardian_grep("${args.query}")`];
+    if (data.symbols?.length) {
+      lines.push("\nSymbols (file:line: name):");
+      for (const s of (data.symbols as Array<{ file: string; line: number; name: string }>).slice(0, 25)) {
+        lines.push(`  ${s.file}:${s.line}: ${s.name}`);
+      }
+    }
+    if (data.files?.length) {
+      lines.push("\nFiles:");
+      for (const f of (data.files as Array<{ file_path: string }>).slice(0, 15)) {
+        lines.push(`  ${f.file_path}`);
+      }
+    }
+    if (lines.length === 1) lines.push("  (no matches — try a different query)");
+    return lines.join("\n");
+  } catch {
+    return raw; // passthrough if search returns plain text
+  }
+}
+
+/**
+ * guardian_glob — semantic file discovery via guardian search.
+ *
+ * Replaces raw Glob tool calls. Extracts meaningful keywords from the glob
+ * pattern and searches the guardian index for matching files. Falls back to
+ * guiding the user toward a more descriptive query for pure extension patterns.
+ */
+async function glob(args: { pattern: string }): Promise<string> {
+  // Extract keywords: "src/auth/**/*.ts" → "auth", "src/middleware/error*" → "middleware error"
+  const keywords = args.pattern
+    .replace(/\*\*?/g, " ")
+    .replace(/\.\w+$/, "")   // strip trailing extension
+    .replace(/[[\]{}]/g, " ")
+    .split(/[/\s]+/)
+    .filter(s => s.length > 2 && !/^(src|lib|dist|app|index)$/.test(s))
+    .join(" ")
+    .trim();
+
+  if (!keywords) {
+    return [
+      `guardian_glob("${args.pattern}"): pattern has no meaningful keywords.`,
+      `Use guardian_search with a descriptive query instead, e.g.:`,
+      `  guardian_search("TypeScript source files") — or describe what you're looking for.`,
+    ].join("\n");
+  }
+
+  const raw = await runCli([
+    "search", "--query", keywords, "--format", "json", "--backend", "auto", "--input", specsInputDir,
+  ]);
+  try {
+    const data = JSON.parse(raw);
+    const files = (data.files as Array<{ file_path: string }> | undefined) ?? [];
+    const lines = [
+      `guardian_glob("${args.pattern}") — searched: "${keywords}"`,
+      `\nMatching files:`,
+      ...files.slice(0, 20).map(f => `  ${f.file_path}`),
+    ];
+    if (files.length === 0) lines.push("  (no matches)");
+    return lines.join("\n");
+  } catch {
+    return raw;
+  }
+}
+
 // ── MCP protocol ──
 
 const TOOLS: Tool[] = [
@@ -220,15 +297,50 @@ const TOOLS: Tool[] = [
     description: "MCP usage stats for this session. Call at end to evaluate guardian's usefulness.",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "guardian_grep",
+    description: [
+      "Semantic grep — find symbols and files matching a keyword or pattern.",
+      "Use INSTEAD of the Grep tool. Returns matching function/class names with file:line locations.",
+      "Backed by BM25 + call-graph authority so relevant source definitions surface first.",
+      "Example: guardian_grep('validate token') → auth.py:42: validate_token, middleware.py:18: check_jwt",
+    ].join(" "),
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Keyword or phrase to search for (natural language OK)" },
+        path:  { type: "string", description: "Optional: restrict to files under this path prefix" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "guardian_glob",
+    description: [
+      "Semantic file discovery — find files matching a path pattern.",
+      "Use INSTEAD of the Glob tool. Extracts keywords from the pattern and searches the guardian index.",
+      "Example: guardian_glob('src/auth/**/*.ts') → searches for 'auth typescript' files.",
+      "For pure extension globs with no path context, use guardian_search with a descriptive query.",
+    ].join(" "),
+    inputSchema: {
+      type: "object",
+      properties: {
+        pattern: { type: "string", description: "Glob pattern (e.g. 'src/auth/**/*.ts', '**/middleware*')" },
+      },
+      required: ["pattern"],
+    },
+  },
 ];
 
 const TOOL_HANDLERS: Record<string, (args: any) => Promise<string>> = {
-  guardian_orient: orient,
+  guardian_orient:  orient,
   guardian_context: context,
-  guardian_impact: impact,
-  guardian_search: search,
-  guardian_model: model,
+  guardian_impact:  impact,
+  guardian_search:  search,
+  guardian_model:   model,
   guardian_metrics: async () => JSON.stringify(metrics.summary()),
+  guardian_grep:    grep,
+  guardian_glob:    glob,
 };
 
 function respond(id: number | string | null, result: any): void {

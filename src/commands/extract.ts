@@ -18,6 +18,10 @@ export type ExtractOptions = {
 };
 
 export async function runExtract(options: ExtractOptions): Promise<void> {
+  // Default to sqlite so every extract builds guardian.db automatically.
+  // Pass --backend file to opt out (e.g. CI environments that don't need search).
+  const backend = options.backend ?? "sqlite";
+
   const { architecturePath, uxPath } = await extractProject(options);
 
   console.log(`Wrote ${architecturePath}`);
@@ -26,7 +30,7 @@ export async function runExtract(options: ExtractOptions): Promise<void> {
   // Auto-build codebase intelligence after every extract
   const specsDir = path.resolve(options.output);
   try {
-    await runIntel({ specs: specsDir, backend: options.backend });
+    await runIntel({ specs: specsDir, backend });
   } catch {
     // Non-fatal — intel build failure should not break extract
   }

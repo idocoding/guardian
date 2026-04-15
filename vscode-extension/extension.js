@@ -404,92 +404,112 @@ function activate(context) {
   }
 
   function configureClaudeCodeHooks(root, commandPath, specsDir, output) {
-    const claudeDir = path.join(root, ".claude");
-    const hooksDir = path.join(claudeDir, "hooks");
-    const settingsPath = path.join(claudeDir, "settings.json");
-    const hookScriptPath = path.join(hooksDir, "mcp-first.sh");
+    const claudeDir       = path.join(root, ".claude");
+    const hooksDir        = path.join(claudeDir, "hooks");
+    const settingsPath    = path.join(claudeDir, "settings.json");
+    const mcpFirstPath    = path.join(hooksDir, "mcp-first.sh");
+    const guardianUsedPath = path.join(hooksDir, "guardian-used.sh");
 
     try {
       fs.mkdirSync(hooksDir, { recursive: true });
 
-      // Write the hook script (always overwrite to pick up extension updates)
-      const HOOK_VERSION = "v2";
-      const hookScript = [
+      // ── mcp-first.sh (PreToolUse) ─────────────────────────────────────────
+      // Blocks Read/Glob/Grep until a guardian tool has been called this session.
+      // Session state: /tmp/guardian-used-<SESSION_ID> set by guardian-used.sh below.
+      // Always overwrite so extension updates propagate automatically.
+      const HOOK_VERSION = "v3";
+      const mcpFirstScript = [
         "#!/bin/bash",
-        `# Guardian MCP-first hook ${HOOK_VERSION} — nudges AI to use Guardian before reading source files.`,
-        "# Installed by: Guardian VS Code extension. Do not edit — regenerated on each guardian run.",
+        `# Guardian MCP-first hook ${HOOK_VERSION} — blocks Read/Glob/Grep until guardian is used.`,
+        "# Installed by: Guardian VS Code extension. Regenerated on each extension activation.",
         "",
-        "# If guardian MCP was called in the last 5 minutes, allow reads through.",
-        "FLAG=/tmp/guardian-last-call",
+        "INPUT=$(cat)",
+        'SESSION_ID=$(echo "$INPUT" | jq -r \'.session_id // "default"\')',
+        'FLAG="/tmp/guardian-used-${SESSION_ID}"',
+        "",
+        "# If guardian was called in this session, allow file operations through.",
         'if [ -f "$FLAG" ]; then',
-        "  AGE=$(( $(date +%s) - $(cat \"$FLAG\") ))",
-        '  if [ "$AGE" -lt 300 ]; then',
-        "    exit 0",
-        "  fi",
+        "  exit 0",
         "fi",
         "",
-        "# Guardian not called recently — remind and block.",
+        "# Guardian not yet called — block and guide.",
         "cat >&2 <<'BLOCK'",
-        "Guardian: use MCP tools before reading source files.",
+        "BLOCKED: Use Guardian MCP tools before exploring source files.",
         "",
         "Call one of these first:",
-        "  guardian_search(query)  — find files/endpoints/symbols by keyword",
-        "  guardian_orient()       — get codebase overview",
-        "  guardian_context(target) — deps for a specific file or endpoint",
+        "  guardian_search(\"your query\")  — find files/symbols/endpoints by keyword",
+        "  guardian_grep(\"pattern\")       — semantic grep (replaces Grep tool)",
+        "  guardian_glob(\"src/auth/**\")   — semantic file discovery (replaces Glob tool)",
+        "  guardian_orient()              — get codebase overview",
         "",
-        "Then read individual files as needed.",
+        "File reads are unblocked automatically for the rest of this session.",
         "BLOCK",
         "",
         "exit 2",
         ""
       ].join("\n");
-      fs.writeFileSync(hookScriptPath, hookScript, { mode: 0o755 });
-      output.appendLine("[Guardian] Installed Claude Code MCP-first hook");
+      fs.writeFileSync(mcpFirstPath, mcpFirstScript, { mode: 0o755 });
+      output.appendLine("[Guardian] Wrote Claude Code PreToolUse hook (mcp-first.sh)");
 
-      // Write or merge .claude/settings.json
+      // ── guardian-used.sh (PostToolUse) ────────────────────────────────────
+      // Called after any guardian MCP tool. Sets the session flag that
+      // mcp-first.sh checks to unblock subsequent file reads.
+      const guardianUsedScript = [
+        "#!/bin/bash",
+        "# Guardian PostToolUse hook — marks guardian as used for this session.",
+        "# Installed by: Guardian VS Code extension.",
+        "",
+        "INPUT=$(cat)",
+        'SESSION_ID=$(echo "$INPUT" | jq -r \'.session_id // "default"\')',
+        'touch "/tmp/guardian-used-${SESSION_ID}"',
+        "exit 0",
+        ""
+      ].join("\n");
+      fs.writeFileSync(guardianUsedPath, guardianUsedScript, { mode: 0o755 });
+      output.appendLine("[Guardian] Wrote Claude Code PostToolUse hook (guardian-used.sh)");
+
+      // ── .claude/settings.json ─────────────────────────────────────────────
       let settings = {};
       if (fs.existsSync(settingsPath)) {
         try {
           settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-        } catch {
-          // Corrupted — overwrite
-        }
+        } catch { /* corrupted — overwrite */ }
       }
 
-      let changed = false;
-
-      // Add MCP server config
+      // MCP server (always update to current commandPath/specsDir)
       if (!settings.mcpServers) settings.mcpServers = {};
-      if (!settings.mcpServers.guardian) {
-        settings.mcpServers.guardian = {
-          command: commandPath,
-          args: ["mcp-serve", "--specs", specsDir]
-        };
-        changed = true;
-      }
+      settings.mcpServers.guardian = {
+        command: commandPath,
+        args: ["mcp-serve", "--specs", specsDir]
+      };
 
-      // Add PreToolUse hook
-      if (!settings.hooks) settings.hooks = {};
-      if (!settings.hooks.PreToolUse) {
-        settings.hooks.PreToolUse = [
+      // Hooks — always overwrite to stay in sync with the installed scripts.
+      // PreToolUse: the script itself handles the session-flag check internally.
+      // PostToolUse: fires after any guardian_* MCP tool call to set the flag.
+      settings.hooks = {
+        PreToolUse: [
           {
             matcher: "Read|Glob|Grep",
-            hooks: [
-              {
-                type: "command",
-                if: "Read(//*/src/*)|Glob(*src*)|Grep(*src*)",
-                command: '"$CLAUDE_PROJECT_DIR"/.claude/hooks/mcp-first.sh'
-              }
-            ]
+            hooks: [{ type: "command", command: ".claude/hooks/mcp-first.sh" }]
           }
-        ];
-        changed = true;
-      }
+        ],
+        PostToolUse: [
+          {
+            matcher: [
+              "mcp__guardian__guardian_search",
+              "mcp__guardian__guardian_orient",
+              "mcp__guardian__guardian_context",
+              "mcp__guardian__guardian_impact",
+              "mcp__guardian__guardian_grep",
+              "mcp__guardian__guardian_glob",
+            ].join("|"),
+            hooks: [{ type: "command", command: ".claude/hooks/guardian-used.sh" }]
+          }
+        ]
+      };
 
-      if (changed) {
-        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
-        output.appendLine("[Guardian] Configured Claude Code hooks (.claude/settings.json)");
-      }
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
+      output.appendLine("[Guardian] Updated .claude/settings.json (MCP + PreToolUse + PostToolUse)");
     } catch (err) {
       output.appendLine("[Guardian] Could not configure Claude Code hooks: " + err.message);
     }

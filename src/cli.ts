@@ -68,7 +68,7 @@ program
   .option("--no-file-graph", "Exclude file-level dependency graph")
   .option("--config <path>", "Path to guardian.config.json")
   .option("--docs-mode <mode>", "Docs mode (lean|full)")
-  .option("--backend <backend>", "Storage backend: 'file' (default) or 'sqlite' (also builds guardian.db + FTS index)")
+  .option("--backend <backend>", "Storage backend: 'sqlite' (default, builds guardian.db + FTS index) or 'file'")
   .action(async (projectRoot, options) => {
     await runExtract({
       projectRoot,

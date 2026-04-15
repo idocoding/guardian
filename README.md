@@ -85,16 +85,18 @@ The block between markers is replaced on every save (VSCode extension) and every
 
 Guardian includes an MCP server that Claude Code and Cursor connect to automatically. The VSCode extension sets this up on first activation — no manual config needed.
 
-**6 compact tools available to AI:**
+**8 compact tools available to AI:**
 
 | Tool | Tokens | Purpose |
 |------|--------|---------|
 | `guardian_orient` | ~100 | Project summary at session start |
 | `guardian_context` | ~50-80 | File or endpoint dependencies before editing |
 | `guardian_impact` | ~30 | What breaks if you change a file |
-| `guardian_search` | ~70 | Find endpoints, models, modules by keyword |
+| `guardian_search` | ~70 | Find endpoints, models, modules, and functions by keyword |
 | `guardian_model` | ~90 | Full field details (only when needed) |
 | `guardian_metrics` | ~50 | Session usage stats |
+| `guardian_grep` | ~40 | Semantic grep — search symbols and literals across the codebase |
+| `guardian_glob` | ~30 | Semantic file discovery — find files by pattern with module context |
 
 All responses are compact JSON — no pretty-printing, no verbose keys. Repeated calls are cached (30s TTL). Usage metrics tracked per session.
 
@@ -229,8 +231,8 @@ npm install && npm run build && npm link
 
 ```bash
 guardian init                          # config, .specs dir, pre-commit hook, CLAUDE.md
-guardian extract                       # full architecture + UX snapshots + docs
-guardian extract --backend sqlite      # same + builds guardian.db with FTS index
+guardian extract                       # full architecture + UX snapshots + guardian.db (default: sqlite)
+guardian extract --backend file        # file-only mode, skips guardian.db
 guardian generate --ai-context         # compact ~3K token AI context only
 ```
 
